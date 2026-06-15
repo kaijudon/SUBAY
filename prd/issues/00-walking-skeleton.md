@@ -22,7 +22,7 @@ A minimal `export_analysis_set` management command writes one CSV per existing m
 
 - [ ] `Recipient` and `Donor` inherit `subject_id`/`date_of_birth`/`sex` from abstract `BaseSubject`; no `basesubject` table exists in the DB.
 - [ ] `subject_id` is read/stored as a string (e.g. `SCMVR07`), never coerced to a number.
-- [ ] Roles `data_entry`, `adjudicator`, `analyst-readonly`, `admin` exist as Django Groups; login requires TOTP 2FA; admin/login header reads "RENOVA".
+- [ ] Roles `data_manager`, `reviewing_clinician`, `data_analyst`, `admin` exist as Django Groups; login requires TOTP 2FA; admin/login header reads "RENOVA".
 - [ ] django-simple-history records create/update on `Recipient`, `RecipientVisit`, `CMVSerology`.
 - [ ] `CMVSerology` enforces exactly-one of (recipient-visit FK, donor FK) at the model layer.
 - [ ] Admin shows visit→labs as inlines; age and risk_stratum render as derived (read-only), not editable columns.

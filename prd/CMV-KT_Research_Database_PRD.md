@@ -43,31 +43,31 @@ From the user's perspective it provides:
 1. As a Data Manager, I want to register a recipient under a pseudonymous subject ID (`[S|D]CMV[R|D][NN]`, e.g. `SCMVR07`), so that the research DB never holds a name, MRN, or address.
 2. As a Data Manager, I want the subject ID treated as an opaque string, so that `"07"` is never silently coerced to the number `7`.
 3. As a Data Manager, I want to store a recipient's date of birth once as the single source of truth, so that age at any event is derived and can never go stale.
-4. As an Analyst, I want each recipient's `donor_serostatus` to be the authoritative value clinicians acted on at transplant, so that risk stratification reflects the real clinical decision rather than a later lab record.
+4. As a Data Analyst, I want each recipient's `donor_serostatus` to be the authoritative value clinicians acted on at transplant, so that risk stratification reflects the real clinical decision rather than a later lab record.
 5. As a Data Manager, I want the system to flag (never auto-overwrite) a mismatch between the recipient's recorded donor serostatus and the donor's own serology record, so that I can reconcile it by hand.
-6. As an Analyst, I want pre-specified confounders (`has_diabetes`, `has_hypertension`) stored as three-state nullable booleans (True / False / Unknown), so that I can distinguish "no diabetes" from "not asked."
-7. As an Analyst, I want `dialysis_vintage_months` and `induction_agent` (atg / basiliximab / none) stored as structured baseline fields, so that the named confounders are queryable and can assert absence.
+6. As a Data Analyst, I want pre-specified confounders (`has_diabetes`, `has_hypertension`) stored as three-state nullable booleans (True / False / Unknown), so that I can distinguish "no diabetes" from "not asked."
+7. As a Data Analyst, I want `dialysis_vintage_months` and `induction_agent` (atg / basiliximab / none) stored as structured baseline fields, so that the named confounders are queryable and can assert absence.
 8. As a Data Manager, I want non-pre-specified past medical history captured one-row-per-condition in `OtherCondition`, so that I don't need a column per possibility.
 9. As a Data Manager, I want donors stored as lightweight records (type, optional relation, at most one baseline serology, single draw date), so that the thin one-draw living-donor workflow isn't burdened with recipient-grade timeline machinery.
-10. As an Analyst, I want the risk stratum derived from D/R serostatus rather than stored, so that it always reflects the current serostatus fields and stays consistent with the Obj 5 D±/R± classification.
+10. As a Data Analyst, I want the risk stratum derived from D/R serostatus rather than stored, so that it always reflects the current serostatus fields and stays consistent with the Obj 5 D±/R± classification.
 11. As a Data Manager, I want the recipient pre-KT IgG serostatus (R+/R−) computed once from the locked serology assay and reused by both Obj 4a stratification and Obj 5 attribution, so that the cohort's serostatus is internally consistent across objectives.
 
 ### Visits, scheduling & closure-shift
 
 12. As a Data Manager, I want the six scheduled recipient timepoints (pre-KT, 1wk/day 7, 1mo/day 30, 3mo/day 90, 4mo/day 120, 6mo/day 180) modeled as visits, so that lab measurements attach to a visit as the data spine.
 13. As a Data Manager, I want each visit to store both the nominal protocol day (computed from KT date + offset) and the actual draw date, so that scheduled adherence and any shift are both on the record.
-14. As an Analyst, I want a `timepoint_label` used for joining labs/episodes to timepoints (not the raw actual day), so that the time axis for KM and TBNK trajectories stays clean.
+14. As a Data Analyst, I want a `timepoint_label` used for joining labs/episodes to timepoints (not the raw actual day), so that the time axis for KM and TBNK trajectories stays clean.
 15. As a Data Manager, I want a visit that lands on a recognized hospital/lab closure day to shift forward to the first day on which clinic *and* lab both operate, recorded as closure-shifted with a reason, so that pre-analytical integrity (same-day plasma separation) is preserved without losing the timepoint.
 16. As a Data Manager, I want consecutive closure days treated as one stretch with a single forward shift (no backward shift, no partial visits), so that post-KT day-counting stays deterministic and audit-clean.
 17. As a Data Manager, I want the system to reject an actual visit date more than +3 calendar days from nominal and force `completion_status = missed_visit`, so that the strict closure-shift cap is enforced by the model, not by memory.
 18. As a Data Manager, I want a `closure_reason` (annexed_holiday / emergency_closure / none) and a free-text stretch reference on each shifted visit, so that the hospital-closure annex and emergency-closure clause are traceable per occurrence.
-19. As an Analyst, I want `shift_days_from_nominal` stored as a derived integer, so that forced-replacement (closure beyond cap) is distinguishable from patient-initiated non-attendance in the CONSORT diagram.
+19. As a Data Analyst, I want `shift_days_from_nominal` stored as a derived integer, so that forced-replacement (closure beyond cap) is distinguishable from patient-initiated non-attendance in the CONSORT diagram.
 
 ### Completer cohort & replacement (D1 + replacement)
 
-20. As an Analyst, I want each recipient to carry a `completion_status` (enrolled / withdrawn / died / lost_to_followup / graft_loss / missed_visit / completed), so that the D1-plus-replacement analytic cohort and the CONSORT flow are reproducible from data.
-21. As an Analyst, I want a lab/QC failure recorded as a missing observation (not a patient-level non-completion), so that an external lab error never wrongly evicts a cooperative patient from the completer cohort.
-22. As an Analyst, I want samples from non-completer subjects still tracked and still flagged for sequencing inclusion, so that the Obj 5 genotype denominator (all sequenced) can differ from the Obj 1 completer cohort (n=40) per the locked footnote.
+20. As a Data Analyst, I want each recipient to carry a `completion_status` (enrolled / withdrawn / died / lost_to_followup / graft_loss / missed_visit / completed), so that the D1-plus-replacement analytic cohort and the CONSORT flow are reproducible from data.
+21. As a Data Analyst, I want a lab/QC failure recorded as a missing observation (not a patient-level non-completion), so that an external lab error never wrongly evicts a cooperative patient from the completer cohort.
+22. As a Data Analyst, I want samples from non-completer subjects still tracked and still flagged for sequencing inclusion, so that the Obj 5 genotype denominator (all sequenced) can differ from the Obj 1 completer cohort (n=40) per the locked footnote.
 
 ### Clinical labs (measured-every-visit panels)
 
@@ -76,26 +76,26 @@ From the user's perspective it provides:
 25. As a Data Manager, I want serology classification to use the locked Snibe Maglumi 600 single 2.0 AU/mL cutoff (≥2.0 positive, <2.0 negative, no equivocal range), with the numeric AU/mL value retained and the positive flag derived, so that the binary serostatus matches the kit and needs no equivocal-handling rule.
 26. As a Data Manager, I want the TBNK panel stored wide with the seven measured subsets (CD3+, CD3+CD4+, CD3+CD8+, CD19+, NK CD3−CD16+CD56+, CD4+CD8+ DP, CD4−CD8− DN), both absolute count (cells/µL) and % lymphocytes, with `cd4_cd8_ratio` derived, so that the co-drawn flow subsets are one row and the ratio can't drift.
 27. As a Data Manager, I want viral loads (IU/mL, COBAS 5000, LoD = LoQ = 34.5) stored long, one row per result, so that unpredictably repeating measurements aren't forced into a fixed shape and the episode deriver can read them.
-28. As an Analyst, I want eGFR derived from stored creatinine via CKD-EPI 2021 (race-free), with any lab-reported eGFR ignored, so that no site-equation step-artifact appears at a site-cross in a trajectory.
-29. As an Analyst, I want raw serum creatinine retained alongside derived eGFR, so that the renal-PK context for valganciclovir dose-reduction (Obj 6) is available, not just the graft-function number.
-30. As an Analyst, I want tacrolimus/everolimus troughs stored long in `DrugLevel` separate from the prescription, so that the real drug-exposure variable is analyzable on its own grain and can mark "tac target-lowering = CMV management."
+28. As a Data Analyst, I want eGFR derived from stored creatinine via CKD-EPI 2021 (race-free), with any lab-reported eGFR ignored, so that no site-equation step-artifact appears at a site-cross in a trajectory.
+29. As a Data Analyst, I want raw serum creatinine retained alongside derived eGFR, so that the renal-PK context for valganciclovir dose-reduction (Obj 6) is available, not just the graft-function number.
+30. As a Data Analyst, I want tacrolimus/everolimus troughs stored long in `DrugLevel` separate from the prescription, so that the real drug-exposure variable is analyzable on its own grain and can mark "tac target-lowering = CMV management."
 
 ### Clinical events
 
 31. As a Data Manager, I want medication courses to carry structured numeric dose (`dose_amount` + `dose_unit` + `frequency`, not free text) and a `drug_class` (antiviral / immunosuppressant), so that doses are queryable and prophylaxis vs treatment intent can be separated.
-32. As an Analyst, I want antiviral exposure to distinguish prophylaxis (all 40, ~2-month valganciclovir, completed-per-protocol flag, early-discontinuation reason) from treatment escalation (CMV+ subset, agent, duration, dose-reduction count + reason), so that a mandated prophylaxis never masquerades as a clinical response.
-33. As an Analyst, I want immunosuppression changes classified directionally (reduction-type vs intensification-type) with an optional CMV-management-intent tag, so that bidirectionality (CMV pushes IS down, rejection pushes IS up) is visible rather than averaged to noise.
-34. As an Analyst, I want rejection episodes modeled as an analytic mirror of CMV episodes (onset_date, rejection_type tcmr/amr/mixed, Banff grade, biopsy_proven flag, biopsy_date, treatment, resolved_date), so that the immunosuppression↔CMV trade-off is analyzable and each IS-up marker is anchored.
-35. As an Adjudicator, I want hospitalization CMV/rejection attribution to be reviewer-set nullable FKs with no exactly-one constraint (both may be null), so that "CMV-attributable hospitalization" is a human judgment over Ljungman/Kotton criteria, never auto-inferred from date overlap.
-36. As an Analyst, I want hospitalizations captured all-cause (admit/discharge/LOS/reason/disposition) with the CMV-attributable subset flagged, so that the denominator makes the attribution honest ("X of Y all-cause episodes met criteria").
+32. As a Data Analyst, I want antiviral exposure to distinguish prophylaxis (all 40, ~2-month valganciclovir, completed-per-protocol flag, early-discontinuation reason) from treatment escalation (CMV+ subset, agent, duration, dose-reduction count + reason), so that a mandated prophylaxis never masquerades as a clinical response.
+33. As a Data Analyst, I want immunosuppression changes classified directionally (reduction-type vs intensification-type) with an optional CMV-management-intent tag, so that bidirectionality (CMV pushes IS down, rejection pushes IS up) is visible rather than averaged to noise.
+34. As a Data Analyst, I want rejection episodes modeled as an analytic mirror of CMV episodes (onset_date, rejection_type tcmr/amr/mixed, Banff grade, biopsy_proven flag, biopsy_date, treatment, resolved_date), so that the immunosuppression↔CMV trade-off is analyzable and each IS-up marker is anchored.
+35. As a Reviewing Clinician, I want hospitalization CMV/rejection attribution to be reviewer-set nullable FKs with no exactly-one constraint (both may be null), so that "CMV-attributable hospitalization" is a human judgment over Ljungman/Kotton criteria, never auto-inferred from date overlap.
+36. As a Data Analyst, I want hospitalizations captured all-cause (admit/discharge/LOS/reason/disposition) with the CMV-attributable subset flagged, so that the denominator makes the attribution honest ("X of Y all-cause episodes met criteria").
 
 ### Episode derivation (Topic #4 locked rules)
 
-37. As an Analyst, I want a CMV episode to start at the first viral load ≥ LoD (34.5 IU/mL), so that all biologically real DNAemia is captured per the locked definition.
-38. As an Analyst, I want an episode to end at the first single QNAT result below LoD, applied uniformly to all severity categories, so that the sparse sampling cadence doesn't right-censor episodes at the 6-month endpoint.
-39. As an Analyst, I want every post-resolution positive (a `<LoD` → `≥LoD` transition) counted as a new episode with no gap rule, so that recurrence counting consistently extends the single-negative philosophy.
-40. As an Analyst, I want each episode tagged with a `severity_tier` (asymptomatic / syndrome / disease per Kotton 2018) for the descriptive breakdown, without that tier branching the pooled primary estimand.
-41. As an Analyst, I want the episode counter computed from the long viral-load table rather than hand-entered, so that episode boundaries are reproducible from raw results and feed the subject-level "any episode ≤6mo" boolean, time-to-first-episode + censor flag, and episode-count + person-time variables.
+37. As a Data Analyst, I want a CMV episode to start at the first viral load ≥ LoD (34.5 IU/mL), so that all biologically real DNAemia is captured per the locked definition.
+38. As a Data Analyst, I want an episode to end at the first single QNAT result below LoD, applied uniformly to all severity categories, so that the sparse sampling cadence doesn't right-censor episodes at the 6-month endpoint.
+39. As a Data Analyst, I want every post-resolution positive (a `<LoD` → `≥LoD` transition) counted as a new episode with no gap rule, so that recurrence counting consistently extends the single-negative philosophy.
+40. As a Data Analyst, I want each episode tagged with a `severity_tier` (asymptomatic / syndrome / disease per Kotton 2018) for the descriptive breakdown, without that tier branching the pooled primary estimand.
+41. As a Data Analyst, I want the episode counter computed from the long viral-load table rather than hand-entered, so that episode boundaries are reproducible from raw results and feed the subject-level "any episode ≤6mo" boolean, time-to-first-episode + censor flag, and episode-count + person-time variables.
 
 ### Biobank ledger
 
@@ -105,39 +105,39 @@ From the user's perspective it provides:
 45. As a Biobank custodian, I want a DB-level `CHECK volume > 0` plus an application-layer over-consumption guard, so that the system refuses to consume more than exists.
 46. As a Biobank custodian, I want single-use / no-refreeze enforced at the DB level, so that residual integrity (≥3 freeze-thaw cycles cause ~0.1–0.3 log10 QNAT drop) is protected.
 47. As a Biobank custodian, I want the one sequencing aliquot transferred to PGC tracked separately with a destruction-certificate field (per MOA), so that PGC-held material and SPMC-held residual are distinct in the record.
-48. As an Analyst, I want every consumption event linked to the pipeline run that consumed it, so that the custody chain from physical tube to analysis is closed.
+48. As a Data Analyst, I want every consumption event linked to the pipeline run that consumed it, so that the custody chain from physical tube to analysis is closed.
 
 ### Genotyping pipeline (Sanger + qPCR)
 
 49. As a Bioinformatician, I want genotyping results anchored to the source `Aliquot` (not a visit), so that subject and sample-date are derived through the tube and the chain of custody is preserved; with an optional CMV-episode FK enabling within-patient genotype-over-time analysis.
 50. As a Bioinformatician, I want a mixed-genotype infection stored as multiple `GenotypeCall` rows (one per allele call, first normal form), so that mixed infections aren't flattened.
 51. As a Bioinformatician, I want Sanger loci recorded with the R/F/N taxonomy (Resolved / Failed-QC / No-amplicon) and qPCR loci with per-probe P/N/I rolling up to single / mixed / untyped, so that the locked dual reporting taxonomy is captured exactly.
-52. As an Adjudicator, I want raw `.ab1` files append-only and never overwritten, with the human-cleaned consensus attributed to its editor, so that the raw signal is immutable.
-53. As an Adjudicator, I want a mandatory second-reviewer lock (`reviewed_by` / `reviewed_at` / `is_locked`) before any genotype call is finalized, so that no call is final without independent review.
-54. As an Adjudicator, I want the reviewer gate on qPCR scoped to Inconclusive (`I`) probe readings only, so that clean P/N calls aren't slowed by needless second review.
+52. As a Reviewing Clinician, I want raw `.ab1` files append-only and never overwritten, with the human-cleaned consensus attributed to its editor, so that the raw signal is immutable.
+53. As a Reviewing Clinician, I want a mandatory second-reviewer lock (`reviewed_by` / `reviewed_at` / `is_locked`) before any genotype call is finalized, so that no call is final without independent review.
+54. As a Reviewing Clinician, I want the reviewer gate on qPCR scoped to Inconclusive (`I`) probe readings only, so that clean P/N calls aren't slowed by needless second review.
 55. As a Bioinformatician, I want an `ingest_genotyping` command that creates the pipeline-run + result/call/detail rows in a single all-or-nothing transaction, copies files to the encrypted volume, runs integrity checks, and is idempotent, so that re-running never duplicates or half-imports.
 56. As a Data Manager, I want each stored file named by its content SHA-256 hash, so that names are self-verifying, deduplicating, and reveal nothing if a file strays from the DB.
 57. As a Bioinformatician, I want the frozen GenBank reference accession set (Ross 2020) stored SHA-pinned, so that BLASTn genotype assignment is reproducible against a version-locked reference.
 
 ### Source attribution & genotype concordance (Obj 5)
 
-58. As an Analyst, I want each subject assigned exactly one flat source label by priority (donor-derived > primary > reactivation), so that the proposal's named three-category deliverable is produced directly.
-59. As an Analyst, I want the primary-infection trigger to be QNAT+ alone in an R− recipient (seroconversion supportive, not gating), so that immunosuppression-blunted antibody responses don't false-negative an already near-empty bucket.
-60. As an Adjudicator, I want a per-pair genotype-concordance call (discordant if ≥1 co-resolved locus differs; concordant if all co-resolved agree and ≥2 co-resolved; high-confidence if ≥3 incl ≥1 hypervariable; indeterminate if <2), so that the graded asymmetric threshold is recorded rather than a false-precision cutoff.
-61. As an Adjudicator, I want mixed-infection donor-derived superinfection flagged candidate vs confirmed, so that the only tool that can unmask donor-derived superinfection in the R+/D+ majority is captured with its confidence tier.
-62. As an Analyst, I want a compact per-pair concordance summary plus a long per-pair × locus allele table (hypervariable-first locus ordering, resistance loci visually separated and labeled "not counted for strain identity"), so that both the reviewer summary and the replication-grade detail are exportable under de-identified pair IDs.
+58. As a Data Analyst, I want each subject assigned exactly one flat source label by priority (donor-derived > primary > reactivation), so that the proposal's named three-category deliverable is produced directly.
+59. As a Data Analyst, I want the primary-infection trigger to be QNAT+ alone in an R− recipient (seroconversion supportive, not gating), so that immunosuppression-blunted antibody responses don't false-negative an already near-empty bucket.
+60. As a Reviewing Clinician, I want a per-pair genotype-concordance call (discordant if ≥1 co-resolved locus differs; concordant if all co-resolved agree and ≥2 co-resolved; high-confidence if ≥3 incl ≥1 hypervariable; indeterminate if <2), so that the graded asymmetric threshold is recorded rather than a false-precision cutoff.
+61. As a Reviewing Clinician, I want mixed-infection donor-derived superinfection flagged candidate vs confirmed, so that the only tool that can unmask donor-derived superinfection in the R+/D+ majority is captured with its confidence tier.
+62. As a Data Analyst, I want a compact per-pair concordance summary plus a long per-pair × locus allele table (hypervariable-first locus ordering, resistance loci visually separated and labeled "not counted for strain identity"), so that both the reviewer summary and the replication-grade detail are exportable under de-identified pair IDs.
 
 ### Resistance surveillance (UL97 / UL54, Q11.7)
 
-63. As an Analyst, I want a `ResistanceCall` record (subject, visit, locus UL97/UL54, R/F/N status, variant list, per-variant tier established/polymorphism/unknown, established-resistance-present bool, QNAT IU/mL), so that the curated-list three-tier surveillance and the amplification-floor audit are both supported.
-64. As an Analyst, I want UL97 and UL54 reported with separate per-locus R-bucket denominators and subject rollup, so that ganciclovir-only (UL97) and cross-resistance (UL54) drug attribution is never pooled away.
+63. As a Data Analyst, I want a `ResistanceCall` record (subject, visit, locus UL97/UL54, R/F/N status, variant list, per-variant tier established/polymorphism/unknown, established-resistance-present bool, QNAT IU/mL), so that the curated-list three-tier surveillance and the amplification-floor audit are both supported.
+64. As a Data Analyst, I want UL97 and UL54 reported with separate per-locus R-bucket denominators and subject rollup, so that ganciclovir-only (UL97) and cross-resistance (UL54) drug attribution is never pooled away.
 65. As a Safety Monitor, I want an established-resistance mutation in a patient with active virological failure flagged for tiered return-of-results (research finding requiring clinical confirmation), so that the locked duty-to-disclose SOP fires on exactly the actionable intersection.
 
 ### Access, audit, verification
 
-66. As an Admin, I want roles via Django's built-in Groups/Permissions (`data_entry`, `adjudicator`, `analyst-readonly`, `admin`), so that PHI access control uses no bespoke security code.
+66. As an Admin, I want roles via Django's built-in Groups/Permissions (`data_manager`, `reviewing_clinician`, `data_analyst`, `admin`), so that PHI access control uses no bespoke security code.
 67. As an Admin, I want django-simple-history audit and django-otp TOTP 2FA on all roles, so that audit and access control are built-in, not custom.
-68. As an Adjudicator, I want a reusable `VerificationMixin` (`entered_by` / `verified_by` / `verified_at` / `is_verified`, enforcing `entered_by != verified_by`) on outcome-critical fields only (episode adjudication, genotype calls, serostatus, drug levels), so that verification effort is spent only where an error changes a result.
+68. As a Reviewing Clinician, I want a reusable `VerificationMixin` (`entered_by` / `verified_by` / `verified_at` / `is_verified`, enforcing `entered_by != verified_by`) on outcome-critical fields only (episode adjudication, genotype calls, serostatus, drug levels), so that verification effort is spent only where an error changes a result.
 69. As a Data Manager, I want validation to live on the models, so that the admin, the shell, and the ingest command all enforce the same rules.
 70. As a Data Manager, I want the data-entry interface to be the customized Django admin (visit→labs inlines, `get_readonly_fields` enforcing `is_locked` and immutable raw files, Group permissions, automatic history), so that a small trained centralized team enters data without a separate forms app to maintain.
 
@@ -148,13 +148,13 @@ From the user's perspective it provides:
 
 ### Analytics export / de-identification
 
-73. As an Analyst, I want an `export_analysis_set` command that writes a versioned, frozen, de-identified snapshot to `analysis_sets/<version>/`, so that I analyze a citable dataset and R never touches live PHI.
-74. As an Analyst, I want derived values (eGFR, risk_stratum, age, cd4_cd8_ratio, thaw_count, remaining_ul, episode index/boundaries, period factor, completion status) materialized once at export via Postgres views, so that R needs no live Python to reproduce them.
-75. As an Analyst, I want the four-level period factor (pre-KT / post-IS-pre-prophylaxis / on-prophylaxis / post-prophylaxis) derived from timepoint + the study-level 2-month prophylaxis cutoff, so that Obj 4 trajectory and association reporting can group by period without re-deriving it in R.
-76. As an Analyst, I want one normalized CSV per model with keys intact (R does the joins), so that repeated-measures data isn't forced into a single nonsensical grain.
-77. As a DPO/Analyst, I want every date converted to an integer day-offset from that recipient's `kt_date` (transplant = day 0) with no calendar dates leaving the export, so that the date-cluster quasi-identifier is removed while clinical intervals are preserved.
-78. As an Analyst, I want plain human-readable CSV per table plus a `manifest.json` with row counts, per-file SHA-256, and per-column type expectations, so that a reviewer can eyeball the export for leaks and R reads with explicit `col_types` (so `"07"` never coerces to `7`).
-79. As an Analyst, I want the export to run an identifier-leak check and refuse to emit if any identifier or calendar date is present, so that the de-identification chokepoint is enforced, not merely intended.
+73. As a Data Analyst, I want an `export_analysis_set` command that writes a versioned, frozen, de-identified snapshot to `analysis_sets/<version>/`, so that I analyze a citable dataset and R never touches live PHI.
+74. As a Data Analyst, I want derived values (eGFR, risk_stratum, age, cd4_cd8_ratio, thaw_count, remaining_ul, episode index/boundaries, period factor, completion status) materialized once at export via Postgres views, so that R needs no live Python to reproduce them.
+75. As a Data Analyst, I want the four-level period factor (pre-KT / post-IS-pre-prophylaxis / on-prophylaxis / post-prophylaxis) derived from timepoint + the study-level 2-month prophylaxis cutoff, so that Obj 4 trajectory and association reporting can group by period without re-deriving it in R.
+76. As a Data Analyst, I want one normalized CSV per model with keys intact (R does the joins), so that repeated-measures data isn't forced into a single nonsensical grain.
+77. As a DPO/Data Analyst, I want every date converted to an integer day-offset from that recipient's `kt_date` (transplant = day 0) with no calendar dates leaving the export, so that the date-cluster quasi-identifier is removed while clinical intervals are preserved.
+78. As a Data Analyst, I want plain human-readable CSV per table plus a `manifest.json` with row counts, per-file SHA-256, and per-column type expectations, so that a reviewer can eyeball the export for leaks and R reads with explicit `col_types` (so `"07"` never coerces to `7`).
+79. As a Data Analyst, I want the export to run an identifier-leak check and refuse to emit if any identifier or calendar date is present, so that the de-identification chokepoint is enforced, not merely intended.
 
 ### Deployment & operations
 

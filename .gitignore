@@ -14,3 +14,5 @@ analysis_sets/
 
 # Tooling
 .pytest_cache/
+.claude/
+cmv_grilling_session.md

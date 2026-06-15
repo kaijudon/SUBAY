@@ -12,7 +12,7 @@ PRD: `prd/CMV-KT_Research_Database_PRD.md`
 
 The four-eyes verification layer, applied **only** where an error changes a result, plus the finalized role model. This is cross-cutting: it lands after the outcome-critical models exist (serostatus/drug levels in slice 05, episode adjudication in slice 07, genotype calls in slice 10) so the mixin can be attached to each.
 
-A reusable abstract `VerificationMixin` (`entered_by` / `verified_by` / `verified_at` / `is_verified`, enforcing `entered_by != verified_by`) is mixed into outcome-critical fields only — episode adjudication, genotype calls, serostatus, drug levels — so verification effort isn't spent on low-stakes rows. Roles use Django's built-in Groups/Permissions (`data_entry`, `adjudicator`, `analyst-readonly`, `admin`) with **no bespoke security code**; django-simple-history and django-otp TOTP 2FA are enforced on all roles. Validation lives on the models so the admin, the shell, and the ingest command all enforce the same gate.
+A reusable abstract `VerificationMixin` (`entered_by` / `verified_by` / `verified_at` / `is_verified`, enforcing `entered_by != verified_by`) is mixed into outcome-critical fields only — episode adjudication, genotype calls, serostatus, drug levels — so verification effort isn't spent on low-stakes rows. Roles use Django's built-in Groups/Permissions (`data_manager`, `reviewing_clinician`, `data_analyst`, `admin`) with **no bespoke security code**; django-simple-history and django-otp TOTP 2FA are enforced on all roles. Validation lives on the models so the admin, the shell, and the ingest command all enforce the same gate.
 
 ## Acceptance criteria
 
