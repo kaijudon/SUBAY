@@ -10,7 +10,7 @@ PRD: `prd/CMV-KT_Research_Database_PRD.md`
 
 ## What to build
 
-A reproducible CMV-episode counter computed from the long viral-load table, applying the locked Topic #4 operational definitions. An Analyst never hand-enters episode boundaries — they are derived from raw QNAT results so they reproduce exactly from stored data, and they feed the SAP estimands (proportion / KM / incidence-rate).
+A reproducible CMV-episode counter computed from the long viral-load table, applying the locked Topic #4 operational definitions. A Data Analyst never hand-enters episode boundaries — they are derived from raw QNAT results so they reproduce exactly from stored data, and they feed the SAP estimands (proportion / KM / incidence-rate).
 
 A pure function takes a recipient's ordered `CMVQuantitative` result series and returns ordered episodes (start day-offset, end day-offset, index) plus subject-level variables (any-episode-≤6mo boolean, time-to-first-episode + censor flag, episode-count + person-time). Each episode is tagged with a `severity_tier` (asymptomatic / syndrome / disease per Kotton 2018) for the descriptive breakdown **without** that tier branching the pooled primary estimand. Episodes surface via a property/view and flow into the de-identified export (slice 01).
 

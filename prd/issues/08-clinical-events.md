@@ -10,7 +10,7 @@ PRD: `prd/CMV-KT_Research_Database_PRD.md`
 
 ## What to build
 
-The clinical-event layer that makes the immunosuppression↔CMV trade-off analyzable rather than averaged to noise. A Data Manager records medication courses, rejection episodes, and hospitalizations with structured vocabularies; an Adjudicator sets CMV/rejection attribution by hand — never auto-inferred from date overlap.
+The clinical-event layer that makes the immunosuppression↔CMV trade-off analyzable rather than averaged to noise. A Data Manager records medication courses, rejection episodes, and hospitalizations with structured vocabularies; a Reviewing Clinician sets CMV/rejection attribution by hand — never auto-inferred from date overlap.
 
 Models: `MedicationCourse` with structured numeric dose (`dose_amount` + `dose_unit` + `frequency`, not free text), a `drug_class` (antiviral / immunosuppressant), and the prophylaxis-vs-treatment split (prophylaxis: all 40, ~2-month valganciclovir, completed-per-protocol flag, early-discontinuation reason; treatment escalation: CMV+ subset, agent, duration, dose-reduction count + reason) so a mandated prophylaxis never masquerades as a clinical response. IS changes carry a directional typology (reduction-type vs intensification-type) with an optional CMV-management-intent tag, so bidirectionality is visible. `RejectionEpisode` mirrors the CMV-episode shape (onset_date, rejection_type tcmr/amr/mixed, Banff grade, biopsy_proven flag, biopsy_date, treatment, resolved_date). `Hospitalization` is captured **all-cause** (admit/discharge/LOS/reason/disposition) with **reviewer-set nullable** CMV/rejection attribution FKs (no exactly-one constraint — both may be null), the CMV-attributable subset flagged so the denominator stays honest.
 

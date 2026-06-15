@@ -1,7 +1,7 @@
 from django.db import migrations
 
 # RBAC uses Django's built-in Groups/Permissions — no bespoke security code (PRD US#66).
-ROLE_GROUPS = ["data_entry", "adjudicator", "analyst-readonly", "admin"]
+ROLE_GROUPS = ["data_manager", "reviewing_clinician", "data_analyst", "admin"]
 
 
 def create_roles(apps, schema_editor):

@@ -65,7 +65,7 @@ full identifier-leak refuse).
 
 ### Access / audit
 
-Four Django Groups (`data_entry`, `adjudicator`, `analyst-readonly`, `admin`) via a
+Four Django Groups (`data_manager`, `reviewing_clinician`, `data_analyst`, `admin`) via a
 data migration; django-otp TOTP on all logins; django-simple-history on `Recipient`,
 `RecipientVisit`, `CMVSerology` (plus `Donor`).
 
