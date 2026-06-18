@@ -19,7 +19,7 @@ hats:
         - renova/registry/management/commands/export_analysis_set.py
         - renova/registry/tests/  (the prior-art test patterns)
 
-      Write a plan to .ralph/agent/Slice<NN>-plan.md (where <NN> is the two-digit
+      Write a plan to docs/plans/Slice<NN>-plan.md (where <NN> is the two-digit
       slice number from the card path in the slice prompt file (SliceNN_prompt.md), e.g. Slice01-plan.md)
       containing:
         1. Every acceptance-criteria checkbox from the card, restated as a
@@ -42,7 +42,7 @@ hats:
     publishes: ["build.done", "build.blocked"]
     instructions: |
       You implement the slice by following the plan in
-      .ralph/agent/Slice<NN>-plan.md (<NN> = slice number from the card in
+      docs/plans/Slice<NN>-plan.md (<NN> = slice number from the card in
       the slice prompt file (SliceNN_prompt.md)). The issue card is in the slice prompt file (SliceNN_prompt.md). Read both.
 
       Repo conventions (study renova/registry/ before writing):
@@ -71,7 +71,7 @@ hats:
     publishes: ["review.approved", "review.changes_requested"]
     instructions: |
       Review the Builder's work against the issue card in the slice prompt file (SliceNN_prompt.md) and the plan
-      in .ralph/agent/Slice<NN>-plan.md (<NN> = slice number from the slice prompt file (SliceNN_prompt.md)).
+      in docs/plans/Slice<NN>-plan.md (<NN> = slice number from the slice prompt file (SliceNN_prompt.md)).
       Do NOT write feature code — verify only.
 
       Check every acceptance-criteria checkbox is actually met. Then:
