@@ -7,6 +7,9 @@ hats:
   planner:
     name: "Planner"
     description: "Reads the slice issue card and writes an ordered TDD plan; no code."
+    backend:
+      command: claude
+      args: ["--model", "claude-opus-4-8"]
     triggers: ["work.start"]
     publishes: ["plan.ready", "plan.blocked"]
     instructions: |
@@ -38,6 +41,9 @@ hats:
   builder:
     name: "Builder"
     description: "Implements the slice test-first by following the plan; runs pytest to green."
+    backend:
+      command: claude
+      args: ["--model", "claude-sonnet-4-6"]
     triggers: ["plan.ready", "review.changes_requested"]
     publishes: ["build.done", "build.blocked"]
     instructions: |
@@ -67,6 +73,9 @@ hats:
   reviewer:
     name: "Reviewer"
     description: "Verifies acceptance criteria + de-id leak check; approves or requests changes."
+    backend:
+      command: claude
+      args: ["--model", "claude-opus-4-8"]
     triggers: ["build.done"]
     publishes: ["review.approved", "review.changes_requested"]
     instructions: |
