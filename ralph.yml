@@ -7,6 +7,9 @@ event_loop:
   prompt_file: Slice02_prompt.md
   completion_promise: LOOP_COMPLETE
   max_iterations: 100
+# RObot is the Telegram human-in-the-loop gate. Disabled for unattended driver
+# runs: no human watches Telegram, and a flaky/unreachable Telegram API stops
+# the loop at iteration 0 (reason=stopped). Re-enable only for interactive runs.
 RObot:
-  enabled: true
+  enabled: false
   timeout_seconds: 120
