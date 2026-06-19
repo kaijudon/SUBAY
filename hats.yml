@@ -65,9 +65,19 @@ hats:
            until tests pass.
         4. Run: .venv/bin/python manage.py makemigrations --check  (no missing)
            and .venv/bin/python -m pytest -q  — full suite GREEN.
+        5. Run the backpressure collector — this produces the REAL evidence the
+           build.done gate requires (do NOT hand-write or fabricate it):
+             .venv/bin/python scripts/backpressure.py
+           It runs tests/lint/typecheck/audit/coverage/complexity/duplication and
+           exits 0 only when every check genuinely passes, printing one evidence
+           line to stdout. If it exits non-zero, FIX the failing category (or emit
+           build.blocked) — never massage the payload to get past the gate.
 
-      When green, emit build.done. If blocked for a reason you cannot resolve,
-      STOP and emit build.blocked with a one-line reason.
+      When green, emit build.done with the collector's stdout line VERBATIM as the
+      payload (e.g. "tests: pass, lint: pass, typecheck: pass, audit: pass,
+      coverage: pass, complexity: <score>, duplication: pass, specs: pass"). If
+      blocked for a reason you cannot resolve, STOP and emit build.blocked with a
+      one-line reason.
 
   # ── 3. Reviewer: verify criteria + privacy gate ─────────────────────────────
   reviewer:
@@ -85,6 +95,10 @@ hats:
 
       Check every acceptance-criteria checkbox is actually met. Then:
         - Run .venv/bin/python -m pytest -q — must be fully green.
+        - Independently re-run .venv/bin/python scripts/backpressure.py — it must
+          exit 0 and its evidence line must match what the Builder put in
+          build.done. Reject if the Builder's payload was hand-written or differs
+          from the collector's real output.
         - Independently confirm the de-id leak-check: inspect the latest
           analysis_sets/<version>/ CSVs — reject if ANY calendar date, name,
           MRN, or address appears. Day-offset integers only. Confirm a seeded
