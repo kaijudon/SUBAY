@@ -18,13 +18,15 @@ from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
 
+# Ordered as handle() writes them (recipients → donors → visits → labs).
 from renova.registry.models import (
-    CMVSerology,
-    Donor,
-    DonorVisit,
-    OtherCondition,
     Recipient,
+    Donor,
     RecipientVisit,
+    DonorVisit,
+    CMVSerology,
+    CMVQuantitative,
+    OtherCondition,
 )
 
 # A bare calendar date should never appear in any output file.
@@ -53,6 +55,7 @@ RECIPIENT_COLUMNS = [
     ("donor", "c"),
     ("completion_status", "c"),
     ("sequencing_included", "c"),
+    ("pre_kt_igg_serostatus", "c"),  # materialized derived value (Slice 05)
 ]
 DONOR_COLUMNS = [
     ("subject_id", "c"),
@@ -88,6 +91,19 @@ SEROLOGY_COLUMNS = [
     ("parent_id", "c"),
     ("value", "d"),
     ("is_positive", "c"),
+    ("result_status", "c"),
+    ("igm_value", "d"),
+    ("igm_status", "c"),
+    ("igm_positive", "c"),  # materialized derived value (Slice 05)
+    ("day_offset", "i"),
+]
+# Long viral-load series: one row per CMVQuantitative result (Slice 05). A
+# donor-attached row blanks day_offset (no kt anchor), mirroring serology.
+QUANTITATIVE_COLUMNS = [
+    ("id", "i"),
+    ("parent_type", "c"),
+    ("parent_id", "c"),
+    ("value", "d"),
     ("result_status", "c"),
     ("day_offset", "i"),
 ]
@@ -128,6 +144,7 @@ class Command(BaseCommand):
             self._write_visits(staging)
             self._write_donor_visits(staging)
             self._write_serologies(staging)
+            self._write_quantitatives(staging)
             self._write_other_conditions(staging)
             self._write_manifest(staging, version)
             self._assert_no_identifier_leak(staging)
@@ -152,7 +169,8 @@ class Command(BaseCommand):
                      _bool3(r.has_donor_serostatus_mismatch),
                      r.donor_id or "",
                      r.completion_status,
-                     _bool3(r.sequencing_included)]
+                     _bool3(r.sequencing_included),
+                     r.pre_kt_igg_serostatus or ""]
                 )
 
     def _write_donors(self, base):
@@ -213,8 +231,29 @@ class Command(BaseCommand):
                     # No recipient anchor for donor-attached labs in Slice 0.
                     parent_type, parent_id, offset = "donor", s.donor_id, ""
                 value_cell = s.value if s.value is not None else ""
+                igm_value_cell = s.igm_value if s.igm_value is not None else ""
+                igm_positive_cell = "" if s.igm_positive is None else s.igm_positive
                 w.writerow([s.id, parent_type, parent_id, value_cell, s.is_positive,
-                            s.result_status, offset])
+                            s.result_status, igm_value_cell, s.igm_status,
+                            igm_positive_cell, offset])
+
+    def _write_quantitatives(self, base):
+        with (base / "cmvquantitative.csv").open("w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow([name for name, _ in QUANTITATIVE_COLUMNS])
+            qs = CMVQuantitative.objects.select_related(
+                "recipient_visit__recipient", "donor"
+            ).order_by("pk")
+            for q in qs:
+                if q.recipient_visit_id is not None:
+                    parent_type, parent_id = "recipient_visit", q.recipient_visit_id
+                    offset = _offset(q.drawn_date, q.recipient_visit.recipient.kt_date)
+                else:
+                    # No kt anchor for donor-attached labs -> blank offset (DEC-006).
+                    parent_type, parent_id, offset = "donor", q.donor_id, ""
+                value_cell = q.value if q.value is not None else ""
+                w.writerow([q.id, parent_type, parent_id, value_cell,
+                            q.result_status, offset])
 
     def _write_manifest(self, base, version):
         specs = {
@@ -223,6 +262,7 @@ class Command(BaseCommand):
             "recipientvisit.csv": VISIT_COLUMNS,
             "donorvisit.csv": DONORVISIT_COLUMNS,
             "cmvserology.csv": SEROLOGY_COLUMNS,
+            "cmvquantitative.csv": QUANTITATIVE_COLUMNS,
             "othercondition.csv": OTHERCONDITION_COLUMNS,
         }
         files = {}
