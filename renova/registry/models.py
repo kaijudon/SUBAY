@@ -25,6 +25,23 @@ CLOSURE_REASON_CHOICES = [
     ("emergency_closure", "Emergency closure"),
 ]
 COMPLETION_STATUS_CHOICES = [("completed", "Completed"), ("missed_visit", "Missed visit")]
+# Patient-level cohort disposition (US 20) — the seven LOCKED CONSORT values, in
+# PRD order. Distinct from the 2-value RecipientVisit.completion_status above:
+# same column name, different model, no Python collision. Hand-entered by the
+# Data Manager (a disposition is a clinical judgement, not derivable from visits).
+RECIPIENT_COMPLETION_STATUS_CHOICES = [
+    ("enrolled", "Enrolled"),
+    ("withdrawn", "Withdrawn"),
+    ("died", "Died"),
+    ("lost_to_followup", "Lost to follow-up"),
+    ("graft_loss", "Graft loss"),
+    ("missed_visit", "Missed visit"),
+    ("completed", "Completed"),
+]
+# A result is either reported (carries a value) or a missing observation (a
+# QC/lab failure). A missing observation is a result-level fact only — it never
+# touches the recipient's completion_status.
+RESULT_STATUS_CHOICES = [("reported", "Reported"), ("missing", "Missing")]
 VISIT_SHIFT_CAP_DAYS = 3
 
 
@@ -86,6 +103,18 @@ class Recipient(BaseSubject):
         null=True,
         blank=True,
         help_text="atg / basiliximab / none. 'none' asserts absence; null = not recorded.",
+    )
+    completion_status = models.CharField(
+        max_length=16,
+        choices=RECIPIENT_COMPLETION_STATUS_CHOICES,
+        default="enrolled",
+        help_text="Cohort disposition for CONSORT (US 20). Hand-entered; never derived. "
+        "A lab/QC failure must NOT change this.",
+    )
+    sequencing_included = models.BooleanField(
+        default=True,
+        help_text="In the Obj 5 all-sequenced denominator regardless of cohort disposition, "
+        "so non-completers' samples stay counted.",
     )
     history = HistoricalRecords()
 
@@ -267,7 +296,20 @@ class CMVSerology(models.Model):
         on_delete=models.CASCADE,
         related_name="serologies",
     )
-    value = models.DecimalField(max_digits=8, decimal_places=2, help_text="Snibe Maglumi 600 AU/mL.")
+    value = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Snibe Maglumi 600 AU/mL. Null only when result_status='missing'.",
+    )
+    result_status = models.CharField(
+        max_length=8,
+        choices=RESULT_STATUS_CHOICES,
+        default="reported",
+        help_text="reported = a value was obtained; missing = QC/lab failure (no value). "
+        "A missing observation never changes the recipient's completion_status.",
+    )
     drawn_date = models.DateField()
     history = HistoricalRecords()
 
@@ -285,6 +327,13 @@ class CMVSerology(models.Model):
                 fields=["donor"],
                 condition=models.Q(donor__isnull=False),
             ),
+            models.CheckConstraint(
+                name="cmvserology_value_matches_result_status",
+                condition=(
+                    models.Q(result_status="reported", value__isnull=False)
+                    | models.Q(result_status="missing", value__isnull=True)
+                ),
+            ),
         ]
 
     @property
@@ -301,6 +350,10 @@ class CMVSerology(models.Model):
                 "A CMVSerology must attach to exactly one of recipient_visit or donor "
                 "(not both, not neither)."
             )
+        if self.result_status == "reported" and self.value is None:
+            raise ValidationError("A reported result must carry a value.")
+        if self.result_status == "missing" and self.value is not None:
+            raise ValidationError("A missing observation must not carry a value.")
 
 
 class OtherCondition(models.Model):

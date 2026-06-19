@@ -336,3 +336,66 @@ def test_export_refuses_on_leaky_closure_reason_in_exported_column(db, tmp_path)
     with pytest.raises(CommandError):
         call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
     assert not (tmp_path / "v0.1").exists()
+
+
+# --- Slice 04: completer cohort + missing observation flow through the export ---
+
+
+@pytest.fixture
+def seeded_cohort(db):
+    """One completed recipient and one withdrawn recipient — both
+    sequencing-included — plus a missing-observation serology. Lets a test show
+    the Obj 1 completer count differs from the Obj 5 all-sequenced count."""
+    r1 = Recipient.objects.create(
+        subject_id="SCMVR07", date_of_birth=date(1980, 1, 1), sex="M",
+        kt_date=date(2025, 1, 1), completion_status="completed",
+    )
+    r2 = Recipient.objects.create(
+        subject_id="SCMVR08", date_of_birth=date(1981, 1, 1), sex="F",
+        kt_date=date(2025, 1, 1), completion_status="withdrawn",
+    )
+    v = RecipientVisit.objects.create(
+        recipient=r1, timepoint_label="day_7", actual_visit_date=date(2025, 1, 8)
+    )
+    CMVSerology.objects.create(
+        recipient_visit=v, result_status="missing", drawn_date=date(2025, 1, 8)
+    )
+    return r1, r2
+
+
+def test_export_exposes_completion_status_and_sequencing_flag(seeded_cohort, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+
+    with (out / "recipient.csv").open(newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    assert "completion_status" in rows[0]
+    assert "sequencing_included" in rows[0]
+
+    completers = [r for r in rows if r["completion_status"] == "completed"]
+    sequenced = [r for r in rows if r["sequencing_included"] == "true"]
+    # Both are sequencing-included, but only one completed: the denominators differ.
+    assert len(completers) == 1
+    assert len(sequenced) == 2
+    assert len(completers) != len(sequenced)
+
+
+def test_export_serology_marks_missing_observation(seeded_cohort, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+
+    with (out / "cmvserology.csv").open(newline="") as fh:
+        row = list(csv.DictReader(fh))[0]
+    assert row["result_status"] == "missing"
+    assert row["value"] == ""  # a missing observation carries no value
+
+
+def test_export_slice04_columns_have_no_calendar_date_or_identifier(seeded_cohort, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    for f in out.glob("*.csv"):
+        text = f.read_text()
+        assert "2025-01-01" not in text  # kt_date
+        assert "2025-01-08" not in text  # drawn/visit date
+        assert "1980-01-01" not in text  # dob
+        assert "1981-01-01" not in text  # dob
