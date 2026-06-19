@@ -1,7 +1,7 @@
 cli:
   backend: claude
 event_loop:
-  prompt_file: Slice01_prompt.md
+  prompt_file: Slice02_prompt.md
   completion_promise: LOOP_COMPLETE
   max_iterations: 100
 RObot:
