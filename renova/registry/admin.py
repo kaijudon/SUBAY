@@ -1,7 +1,15 @@
 from django.contrib import admin
 from simple_history.admin import SimpleHistoryAdmin
 
-from .models import CMVSerology, Donor, OtherCondition, Recipient, RecipientVisit
+from .models import (
+    ClosureDay,
+    CMVSerology,
+    Donor,
+    DonorVisit,
+    OtherCondition,
+    Recipient,
+    RecipientVisit,
+)
 from .sites import RenovaAdminSite  # re-exported; the class is defined in sites.py
 
 __all__ = ["RenovaAdminSite"]
@@ -23,6 +31,11 @@ class OtherConditionInline(admin.TabularInline):
     extra = 0
 
 
+class DonorVisitInline(admin.TabularInline):
+    model = DonorVisit
+    extra = 0
+
+
 @admin.register(Recipient)
 class RecipientAdmin(SimpleHistoryAdmin):
     list_display = ("subject_id", "sex", "kt_date", "age", "risk_stratum", "induction_agent")
@@ -33,14 +46,32 @@ class RecipientAdmin(SimpleHistoryAdmin):
 
 @admin.register(RecipientVisit)
 class RecipientVisitAdmin(SimpleHistoryAdmin):
-    list_display = ("id", "recipient", "visit_date")
+    list_display = (
+        "id", "recipient", "timepoint_label", "actual_visit_date", "completion_status",
+        "nominal_day", "closure_shifted", "closure_reason", "shift_days_from_nominal",
+    )
+    # scheduling values are computed, never editable
+    readonly_fields = (
+        "nominal_day", "closure_shifted", "closure_reason", "shift_days_from_nominal",
+    )
     inlines = [CMVSerologyInline]
+
+
+@admin.register(ClosureDay)
+class ClosureDayAdmin(SimpleHistoryAdmin):
+    list_display = ("date", "reason", "reference", "closes_clinic", "closes_lab")
+
+
+@admin.register(DonorVisit)
+class DonorVisitAdmin(SimpleHistoryAdmin):
+    list_display = ("id", "donor", "draw_date")
 
 
 @admin.register(Donor)
 class DonorAdmin(SimpleHistoryAdmin):
     list_display = ("subject_id", "sex", "donor_type", "relation", "baseline_serostatus")
     readonly_fields = ("baseline_serostatus",)  # derived from the single serology
+    inlines = [DonorVisitInline]
 
 
 @admin.register(OtherCondition)

@@ -14,7 +14,9 @@ def test_smoke_exactly_one_and_export_is_date_safe(tmp_path):
     r = Recipient.objects.create(
         subject_id="SCMVR09", date_of_birth=date(1980, 1, 1), sex="M", kt_date=date(2025, 1, 1)
     )
-    v = RecipientVisit.objects.create(recipient=r, visit_date=date(2025, 2, 1))
+    v = RecipientVisit.objects.create(
+        recipient=r, timepoint_label="day_30", actual_visit_date=date(2025, 2, 1)
+    )
 
     # exactly-one parent: a parentless result is rejected.
     with pytest.raises(ValidationError):

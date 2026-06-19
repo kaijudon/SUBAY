@@ -106,8 +106,14 @@ def test_donor_carries_type_and_optional_relation():
 
 @pytest.mark.django_db
 def test_donor_has_no_visit_timeline():
-    rel_names = [f.name for f in Donor._meta.get_fields()]
-    assert "visits" not in rel_names
+    # Slice 03 adds a minimal DonorVisit (donor + draw_date) reachable via
+    # `visits`, but a donor still gets NO recipient-grade timeline: the related
+    # model carries no nominal_day/timepoint/closure scheduling.
+    rel = Donor._meta.get_field("visits").related_model
+    assert rel.__name__ == "DonorVisit"
+    for forbidden in ("nominal_day", "timepoint_label", "closure_shifted",
+                      "closure_reason", "shift_days_from_nominal", "actual_visit_date"):
+        assert not hasattr(rel, forbidden)
 
 
 @pytest.mark.django_db

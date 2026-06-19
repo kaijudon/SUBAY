@@ -9,8 +9,10 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 
 from renova.registry.models import (
+    ClosureDay,
     CMVSerology,
     Donor,
+    DonorVisit,
     OtherCondition,
     Recipient,
     RecipientVisit,
@@ -27,7 +29,9 @@ def seeded(db):
         donor_serostatus="POS",
         recipient_serostatus="NEG",
     )
-    v = RecipientVisit.objects.create(recipient=r, visit_date=date(2025, 1, 15))
+    v = RecipientVisit.objects.create(
+        recipient=r, timepoint_label="day_7", actual_visit_date=date(2025, 1, 15)
+    )
     CMVSerology.objects.create(recipient_visit=v, value=Decimal("3.0"), drawn_date=date(2025, 1, 15))
     return r
 
@@ -60,6 +64,7 @@ def test_export_produces_one_csv_per_model_with_keys_intact(seeded, tmp_path):
         "recipient.csv",
         "donor.csv",
         "recipientvisit.csv",
+        "donorvisit.csv",
         "cmvserology.csv",
         "othercondition.csv",
         "manifest.json",
@@ -238,6 +243,96 @@ def test_export_refuses_on_leaky_other_condition(db, tmp_path):
     )
     OtherCondition.objects.create(recipient=r, condition="Maria Santos")  # name-shaped leak
 
+    with pytest.raises(CommandError):
+        call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    assert not (tmp_path / "v0.1").exists()
+
+
+# --- Slice 03: visit spine + closure-shift fields flow through the de-id export ---
+
+
+@pytest.fixture
+def seeded_visits(db):
+    """A recipient with a closure-shifted visit (a ClosureDay carrying a
+    free-text reference) AND a donor with a real draw_date — the full Slice 03
+    export surface for the leak scan."""
+    d = Donor.objects.create(
+        subject_id="DCMVD01", date_of_birth=date(1975, 1, 1), sex="F"
+    )
+    DonorVisit.objects.create(donor=d, draw_date=date(2024, 12, 1))
+    r = Recipient.objects.create(
+        subject_id="SCMVR07",
+        date_of_birth=date(1980, 1, 1),
+        sex="M",
+        kt_date=date(2025, 1, 1),
+    )
+    ClosureDay.objects.create(
+        date=date(2025, 1, 8), reason="annexed_holiday", reference="Annex A clause 3"
+    )
+    RecipientVisit.objects.create(
+        recipient=r, timepoint_label="day_7", actual_visit_date=date(2025, 1, 9)
+    )
+    return r
+
+
+def test_export_visit_columns_are_offsets_and_derived(seeded_visits, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+
+    with (out / "recipientvisit.csv").open(newline="") as fh:
+        row = list(csv.DictReader(fh))[0]
+    assert row["recipient"] == "SCMVR07"
+    assert row["timepoint_label"] == "day_7"
+    assert row["nominal_day"] == "7"
+    assert row["actual_day_offset"] == "8"  # 2025-01-09 is 8 days after kt day 0
+    assert row["closure_shifted"] == "true"
+    assert row["closure_reason"] == "annexed_holiday"
+    assert row["shift_days_from_nominal"] == "1"  # actual 01-09 minus nominal 01-08
+    assert row["completion_status"] == "completed"
+
+
+def test_export_donor_visit_has_no_calendar_date(seeded_visits, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+
+    with (out / "donorvisit.csv").open(newline="") as fh:
+        row = list(csv.DictReader(fh))[0]
+    assert row["donor"] == "DCMVD01"
+    assert row["day_offset"] == ""  # no kt anchor -> no offset, no calendar date
+
+
+def test_export_stretch_reference_never_exported(seeded_visits, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    # free-text reference is a leak vector — the enum closure_reason carries the signal.
+    for f in out.glob("*.csv"):
+        assert "Annex A clause 3" not in f.read_text()
+
+
+def test_export_leak_scan_over_visit_columns_and_donor_file(seeded_visits, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    for f in out.glob("*.csv"):
+        text = f.read_text()
+        assert "2025-01-09" not in text  # actual_visit_date never a calendar date
+        assert "2025-01-08" not in text  # nominal/closure date
+        assert "2024-12-01" not in text  # donor draw_date absent (blanked)
+        assert "2025-01-01" not in text  # kt_date
+
+
+def test_export_refuses_on_leaky_closure_reason_in_exported_column(db, tmp_path):
+    """A name-shaped value placed in an EXPORTED column still triggers refusal
+    with nothing written (the chokepoint stays intact)."""
+    r = Recipient.objects.create(
+        subject_id="SCMVR07", date_of_birth=date(1980, 1, 1), sex="M",
+        kt_date=date(2025, 1, 1),
+    )
+    # completion_status is exported; a leaky value there must be caught.
+    v = RecipientVisit(
+        recipient=r, timepoint_label="day_7", actual_visit_date=date(2025, 1, 8),
+        completion_status="Maria Santos",
+    )
+    v.save()  # bypass clean() to stage a leak into an exported column
     with pytest.raises(CommandError):
         call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
     assert not (tmp_path / "v0.1").exists()

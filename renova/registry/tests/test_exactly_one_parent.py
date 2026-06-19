@@ -17,7 +17,9 @@ def recipient(db):
 
 @pytest.fixture
 def visit(recipient):
-    return RecipientVisit.objects.create(recipient=recipient, visit_date=date(2025, 1, 15))
+    return RecipientVisit.objects.create(
+        recipient=recipient, timepoint_label="day_7", actual_visit_date=date(2025, 1, 15)
+    )
 
 
 @pytest.fixture
