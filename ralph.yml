@@ -1,5 +1,11 @@
 cli:
-  backend: claude
+  # Pin model + headless flags at the GLOBAL backend too. The slice-03 loop ran
+  # on claude-sonnet-4-6 despite the per-hat opus override in hats.yml, so the
+  # hat-level backend override did not take effect. Setting it here guarantees
+  # opus + headless regardless of hat-override precedence.
+  backend:
+    command: claude
+    args: ["--print", "--dangerously-skip-permissions", "--disallowedTools=TodoWrite,TaskCreate,TaskUpdate,TaskList,TaskGet", "--model", "claude-opus-4-8"]
 event_loop:
   prompt_file: Slice02_prompt.md
   completion_promise: LOOP_COMPLETE

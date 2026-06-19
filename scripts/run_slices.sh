@@ -24,7 +24,20 @@ set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
 ROOT="$PWD"
 
-SLICES=(03 04 05 06 07 08 09 10 11 12 13 14)
+ALL_SLICES=(03 04 05 06 07 08 09 10 11 12 13 14)
+# Optional first arg = slice to start from (e.g. ./run_slices.sh 04 to resume
+# after 03 is already committed). Defaults to the first slice.
+START="${1:-${ALL_SLICES[0]}}"
+SLICES=()
+seen=0
+for s in "${ALL_SLICES[@]}"; do
+  [[ "$s" == "$START" ]] && seen=1
+  [[ "$seen" == 1 ]] && SLICES+=("$s")
+done
+if [[ ${#SLICES[@]} -eq 0 ]]; then
+  echo "FATAL: start slice '$START' not in ${ALL_SLICES[*]}" >&2
+  exit 2
+fi
 MAX_ITERS=10
 CONDA="conda run -n renova_env"
 LOGDIR="$ROOT/logs"
