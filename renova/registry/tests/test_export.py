@@ -10,6 +10,7 @@ from django.core.management.base import CommandError
 
 from renova.registry.models import (
     ClosureDay,
+    CMVQuantitative,
     CMVSerology,
     Donor,
     DonorVisit,
@@ -66,6 +67,7 @@ def test_export_produces_one_csv_per_model_with_keys_intact(seeded, tmp_path):
         "recipientvisit.csv",
         "donorvisit.csv",
         "cmvserology.csv",
+        "cmvquantitative.csv",
         "othercondition.csv",
         "manifest.json",
     }
@@ -399,3 +401,91 @@ def test_export_slice04_columns_have_no_calendar_date_or_identifier(seeded_cohor
         assert "2025-01-08" not in text  # drawn/visit date
         assert "1980-01-01" not in text  # dob
         assert "1981-01-01" not in text  # dob
+
+
+# --- Slice 05: viral-load + IgM serology + pre-KT serostatus flow through export ---
+
+
+@pytest.fixture
+def seeded_slice05(db):
+    """A recipient with a pre_kt IgG+IgM serology and a viral-load series, plus a
+    donor with its own quantitative result — the full Slice 05 export surface."""
+    d = Donor.objects.create(subject_id="DCMVD01", date_of_birth=date(1975, 1, 1), sex="F")
+    CMVQuantitative.objects.create(donor=d, value=Decimal("200"), drawn_date=date(2024, 12, 1))
+    r = Recipient.objects.create(
+        subject_id="SCMVR07", date_of_birth=date(1980, 1, 1), sex="M", kt_date=date(2025, 1, 1)
+    )
+    v = RecipientVisit.objects.create(
+        recipient=r, timepoint_label="pre_kt", actual_visit_date=date(2025, 1, 1)
+    )
+    CMVSerology.objects.create(
+        recipient_visit=v, value=Decimal("3.0"),  # IgG positive
+        igm_value=Decimal("1.0"), igm_status="reported",  # IgM negative
+        drawn_date=date(2025, 1, 1),
+    )
+    CMVQuantitative.objects.create(
+        recipient_visit=v, value=Decimal("1500"), drawn_date=date(2025, 1, 1)
+    )
+    return r
+
+
+def test_export_serology_has_materialized_igm_columns(seeded_slice05, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+
+    with (out / "cmvserology.csv").open(newline="") as fh:
+        row = list(csv.DictReader(fh))[0]
+    assert row["igm_value"] == "1.00"
+    assert row["igm_status"] == "reported"
+    assert row["igm_positive"] == "False"  # materialized derived value, 1.0 < 2.0
+
+
+def test_export_materializes_pre_kt_igg_serostatus(seeded_slice05, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+
+    with (out / "recipient.csv").open(newline="") as fh:
+        row = list(csv.DictReader(fh))[0]
+    assert row["pre_kt_igg_serostatus"] == "POS"  # IgG 3.0 >= 2.0
+
+
+def test_export_quantitative_is_long_one_row_per_result(seeded_slice05, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+
+    with (out / "cmvquantitative.csv").open(newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    assert len(rows) == 2  # one donor row, one recipient-visit row
+    by_parent = {r["parent_type"] for r in rows}
+    assert by_parent == {"donor", "recipient_visit"}
+
+
+def test_export_quantitative_recipient_row_is_day_offset(seeded_slice05, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+
+    with (out / "cmvquantitative.csv").open(newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    recip = [r for r in rows if r["parent_type"] == "recipient_visit"][0]
+    assert recip["day_offset"] == "0"  # drawn 2025-01-01 == kt day 0
+    donor = [r for r in rows if r["parent_type"] == "donor"][0]
+    assert donor["day_offset"] == ""  # no kt anchor -> blank, never a calendar date
+
+
+def test_export_slice05_leak_scan_over_new_file_and_columns(seeded_slice05, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    for f in out.glob("*.csv"):
+        text = f.read_text()
+        assert "2025-01-01" not in text  # kt_date / drawn_date never a calendar date
+        assert "2024-12-01" not in text  # donor drawn_date blanked
+        assert "1980-01-01" not in text  # dob
+        assert "1975-01-01" not in text  # donor dob
+
+
+def test_export_manifest_lists_quantitative_file(seeded_slice05, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    manifest = json.loads((out / "manifest.json").read_text())
+    assert "cmvquantitative.csv" in manifest["files"]
+    assert manifest["files"]["cmvquantitative.csv"]["columns"]["parent_id"] == "c"

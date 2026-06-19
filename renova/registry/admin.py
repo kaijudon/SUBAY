@@ -3,6 +3,7 @@ from simple_history.admin import SimpleHistoryAdmin
 
 from .models import (
     ClosureDay,
+    CMVQuantitative,
     CMVSerology,
     Donor,
     DonorVisit,
@@ -17,6 +18,12 @@ __all__ = ["RenovaAdminSite"]
 
 class CMVSerologyInline(admin.TabularInline):
     model = CMVSerology
+    fk_name = "recipient_visit"
+    extra = 0
+
+
+class CMVQuantitativeInline(admin.TabularInline):
+    model = CMVQuantitative
     fk_name = "recipient_visit"
     extra = 0
 
@@ -57,7 +64,7 @@ class RecipientVisitAdmin(SimpleHistoryAdmin):
     readonly_fields = (
         "nominal_day", "closure_shifted", "closure_reason", "shift_days_from_nominal",
     )
-    inlines = [CMVSerologyInline]
+    inlines = [CMVSerologyInline, CMVQuantitativeInline]
 
 
 @admin.register(ClosureDay)
@@ -87,4 +94,11 @@ class CMVSerologyAdmin(SimpleHistoryAdmin):
     list_display = (
         "id", "recipient_visit", "donor", "value", "is_positive", "result_status", "drawn_date",
     )
-    readonly_fields = ("is_positive",)  # derived at the 2.0 AU/mL threshold
+    readonly_fields = ("is_positive", "igm_positive")  # derived at the 2.0 AU/mL threshold
+
+
+@admin.register(CMVQuantitative)
+class CMVQuantitativeAdmin(SimpleHistoryAdmin):
+    list_display = (
+        "id", "recipient_visit", "donor", "value", "result_status", "drawn_date",
+    )

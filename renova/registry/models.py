@@ -139,6 +139,21 @@ class Recipient(BaseSubject):
         return "low"  # D-/R-
 
     @property
+    def pre_kt_igg_serostatus(self):
+        """R+/R- computed ONCE from the pre_kt visit's IgG serology (single
+        2.0 AU/mL cutoff). The canonical pre-KT serostatus both Obj 4a
+        stratification and Obj 5 attribution consume — derived, never stored, so
+        the two objectives can never read disagreeing values. None when there is
+        no pre_kt visit or its IgG result is missing."""
+        visit = self.visits.filter(timepoint_label="pre_kt").first()
+        if visit is None:
+            return None
+        s = visit.serologies.first()
+        if s is None or s.is_positive is None:
+            return None
+        return "POS" if s.is_positive else "NEG"
+
+    @property
     def has_donor_serostatus_mismatch(self):
         """Flag (never overwrite) a clash between the recorded donor serostatus
         and the paired donor's own serology. Surfaces for hand reconciliation;
@@ -301,14 +316,27 @@ class CMVSerology(models.Model):
         decimal_places=2,
         null=True,
         blank=True,
-        help_text="Snibe Maglumi 600 AU/mL. Null only when result_status='missing'.",
+        help_text="IgG channel. Snibe Maglumi 600 AU/mL. Null only when result_status='missing'.",
     )
     result_status = models.CharField(
         max_length=8,
         choices=RESULT_STATUS_CHOICES,
         default="reported",
-        help_text="reported = a value was obtained; missing = QC/lab failure (no value). "
-        "A missing observation never changes the recipient's completion_status.",
+        help_text="IgG channel. reported = a value was obtained; missing = QC/lab failure "
+        "(no value). A missing observation never changes the recipient's completion_status.",
+    )
+    igm_value = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="IgM channel. Snibe Maglumi 600 AU/mL. Null only when igm_status='missing'.",
+    )
+    igm_status = models.CharField(
+        max_length=8,
+        choices=RESULT_STATUS_CHOICES,
+        default="missing",
+        help_text="IgM channel. Defaults 'missing' — an IgG-only draw has no IgM observation.",
     )
     drawn_date = models.DateField()
     history = HistoricalRecords()
@@ -334,6 +362,13 @@ class CMVSerology(models.Model):
                     | models.Q(result_status="missing", value__isnull=True)
                 ),
             ),
+            models.CheckConstraint(
+                name="cmvserology_igm_value_matches_status",
+                condition=(
+                    models.Q(igm_status="reported", igm_value__isnull=False)
+                    | models.Q(igm_status="missing", igm_value__isnull=True)
+                ),
+            ),
         ]
 
     @property
@@ -342,12 +377,103 @@ class CMVSerology(models.Model):
             return None
         return self.value >= self.POSITIVE_THRESHOLD
 
+    @property
+    def igm_positive(self):
+        """IgM positivity at the SAME locked 2.0 AU/mL single cutoff. Derived,
+        never stored — no equivocal band, only True / False / None (not measured)."""
+        if self.igm_value is None:
+            return None
+        return self.igm_value >= self.POSITIVE_THRESHOLD
+
     def clean(self):
         has_visit = self.recipient_visit_id is not None
         has_donor = self.donor_id is not None
         if has_visit == has_donor:
             raise ValidationError(
                 "A CMVSerology must attach to exactly one of recipient_visit or donor "
+                "(not both, not neither)."
+            )
+        if self.result_status == "reported" and self.value is None:
+            raise ValidationError("A reported result must carry a value.")
+        if self.result_status == "missing" and self.value is not None:
+            raise ValidationError("A missing observation must not carry a value.")
+        if self.igm_status == "reported" and self.igm_value is None:
+            raise ValidationError("A reported IgM result must carry a value.")
+        if self.igm_status == "missing" and self.igm_value is not None:
+            raise ValidationError("A missing IgM observation must not carry a value.")
+
+
+class CMVQuantitative(models.Model):
+    """One CMV viral-load measurement, stored LONG — one row per result so a
+    patient's repeating draws form an ordered series (Meta.ordering by drawn_date)
+    the episode deriver (slice 07) consumes, never forced into a fixed shape.
+
+    Attaches to EXACTLY ONE parent (recipient visit OR donor), enforced twice like
+    CMVSerology: clean() for a friendly admin error, a DB CheckConstraint for an
+    unbreakable guarantee. value is COBAS 5000 IU/mL; a result below LoQ is still a
+    row (long shape, no clamping decision needed this slice)."""
+
+    ASSAY = "COBAS 5000"
+    LOD = Decimal("34.5")  # limit of detection
+    LOQ = Decimal("34.5")  # limit of quantitation (== LoD for this assay)
+
+    recipient_visit = models.ForeignKey(
+        RecipientVisit,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="quantitatives",
+    )
+    donor = models.ForeignKey(
+        Donor,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="quantitatives",
+    )
+    value = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="COBAS 5000 IU/mL. Null only when result_status='missing'.",
+    )
+    result_status = models.CharField(
+        max_length=8,
+        choices=RESULT_STATUS_CHOICES,
+        default="reported",
+        help_text="reported = a value was obtained; missing = QC/lab failure (no value). "
+        "A missing observation never changes the recipient's completion_status.",
+    )
+    drawn_date = models.DateField()
+    history = HistoricalRecords()
+
+    class Meta:
+        # Chronological so the episode deriver reads an ordered series.
+        ordering = ["drawn_date", "pk"]
+        constraints = [
+            models.CheckConstraint(
+                name="cmvquantitative_exactly_one_parent",
+                condition=(
+                    models.Q(recipient_visit__isnull=False, donor__isnull=True)
+                    | models.Q(recipient_visit__isnull=True, donor__isnull=False)
+                ),
+            ),
+            models.CheckConstraint(
+                name="cmvquantitative_value_matches_result_status",
+                condition=(
+                    models.Q(result_status="reported", value__isnull=False)
+                    | models.Q(result_status="missing", value__isnull=True)
+                ),
+            ),
+        ]
+
+    def clean(self):
+        has_visit = self.recipient_visit_id is not None
+        has_donor = self.donor_id is not None
+        if has_visit == has_donor:
+            raise ValidationError(
+                "A CMVQuantitative must attach to exactly one of recipient_visit or donor "
                 "(not both, not neither)."
             )
         if self.result_status == "reported" and self.value is None:
