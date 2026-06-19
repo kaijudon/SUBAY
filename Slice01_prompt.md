@@ -2,7 +2,7 @@
 
 ## Context (carry forward)
 - Stack: Django + `renova` package, app `renova/registry/`. Validation lives on
-  the models. Test harness: `.venv/bin/python -m pytest -q` (pytest-django).
+  the models. Test harness: `conda run -n renova_env python -m pytest -q` (pytest-django).
 - Slice 00 is merged and green (21 tests). This slice EXTENDS it; it does not
   rewrite it.
 - Source of truth: `prd/issues/01-export-de-id-chokepoint.md`. Parent spec:
@@ -77,6 +77,6 @@ test-first: add a failing test per criterion (including the seeded-identifier
 refusal), confirm red, then implement to green.
 
 ## Done when
-Every acceptance-criteria box is satisfied, `.venv/bin/python -m pytest -q` is
+Every acceptance-criteria box is satisfied, `conda run -n renova_env python -m pytest -q` is
 fully green (old + new tests), and the Reviewer hat approves. When the Reviewer
 approves, print LOOP_COMPLETE.

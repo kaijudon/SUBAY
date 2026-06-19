@@ -28,7 +28,7 @@ Tooling per DEC-004 (.ralph/agent/decisions.md) -- zero new deps except mypy:
 
 Usage::
 
-    .venv/bin/python scripts/backpressure.py
+    conda run -n renova_env python scripts/backpressure.py
 """
 
 from __future__ import annotations
