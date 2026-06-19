@@ -51,6 +51,8 @@ RECIPIENT_COLUMNS = [
     ("induction_agent", "c"),
     ("has_donor_serostatus_mismatch", "c"),
     ("donor", "c"),
+    ("completion_status", "c"),
+    ("sequencing_included", "c"),
 ]
 DONOR_COLUMNS = [
     ("subject_id", "c"),
@@ -86,6 +88,7 @@ SEROLOGY_COLUMNS = [
     ("parent_id", "c"),
     ("value", "d"),
     ("is_positive", "c"),
+    ("result_status", "c"),
     ("day_offset", "i"),
 ]
 
@@ -147,7 +150,9 @@ class Command(BaseCommand):
                      r.dialysis_vintage_months if r.dialysis_vintage_months is not None else "",
                      r.induction_agent or "",
                      _bool3(r.has_donor_serostatus_mismatch),
-                     r.donor_id or ""]
+                     r.donor_id or "",
+                     r.completion_status,
+                     _bool3(r.sequencing_included)]
                 )
 
     def _write_donors(self, base):
@@ -207,7 +212,9 @@ class Command(BaseCommand):
                 else:
                     # No recipient anchor for donor-attached labs in Slice 0.
                     parent_type, parent_id, offset = "donor", s.donor_id, ""
-                w.writerow([s.id, parent_type, parent_id, s.value, s.is_positive, offset])
+                value_cell = s.value if s.value is not None else ""
+                w.writerow([s.id, parent_type, parent_id, value_cell, s.is_positive,
+                            s.result_status, offset])
 
     def _write_manifest(self, base, version):
         specs = {

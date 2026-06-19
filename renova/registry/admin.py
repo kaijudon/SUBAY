@@ -38,7 +38,10 @@ class DonorVisitInline(admin.TabularInline):
 
 @admin.register(Recipient)
 class RecipientAdmin(SimpleHistoryAdmin):
-    list_display = ("subject_id", "sex", "kt_date", "age", "risk_stratum", "induction_agent")
+    list_display = (
+        "subject_id", "sex", "kt_date", "age", "risk_stratum", "induction_agent",
+        "completion_status", "sequencing_included",
+    )
     # derived values are read-only — computed, never editable
     readonly_fields = ("age", "risk_stratum", "has_donor_serostatus_mismatch")
     inlines = [RecipientVisitInline, OtherConditionInline]
@@ -81,5 +84,7 @@ class OtherConditionAdmin(SimpleHistoryAdmin):
 
 @admin.register(CMVSerology)
 class CMVSerologyAdmin(SimpleHistoryAdmin):
-    list_display = ("id", "recipient_visit", "donor", "value", "is_positive", "drawn_date")
+    list_display = (
+        "id", "recipient_visit", "donor", "value", "is_positive", "result_status", "drawn_date",
+    )
     readonly_fields = ("is_positive",)  # derived at the 2.0 AU/mL threshold
