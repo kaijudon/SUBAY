@@ -17,7 +17,9 @@ merged AFK.
 ## Install sketch (run on the real box, as the HITL checkpoint)
 
 ```sh
-# 1. Code + venv at /opt/renova, owned by the renova service user.
+# 1. Code at /opt/renova (owned by the renova service user); conda env at
+#    /opt/conda/envs/renova_env:
+sudo conda env create -f /opt/renova/environment.yml -p /opt/conda/envs/renova_env
 # 2. Secrets:
 sudo install -d -m 700 /etc/renova
 sudo install -m 600 deploy/renova.env.example /etc/renova/renova.env   # then edit
@@ -28,14 +30,14 @@ sudo cp deploy/nginx-renova.conf /etc/nginx/sites-available/renova
 sudo ln -s /etc/nginx/sites-available/renova /etc/nginx/sites-enabled/
 sudo systemctl daemon-reload && sudo systemctl enable --now renova
 sudo nginx -t && sudo systemctl reload nginx
-# 5. /opt/renova/.venv/bin/python manage.py collectstatic --noinput
+# 5. /opt/conda/envs/renova_env/bin/python manage.py collectstatic --noinput
 ```
 
 ## Local development (no nginx/systemd)
 
 ```sh
-.venv/bin/python manage.py migrate
-.venv/bin/python manage.py runserver 127.0.0.1:8000
+conda run -n renova_env python manage.py migrate
+conda run -n renova_env python manage.py runserver 127.0.0.1:8000
 ```
 
 Deferred to Slice 15: LUKS full-disk, pgcrypto on sensitive columns, key-only SSH

@@ -10,7 +10,9 @@ RuntimeDirectory=renova
 WorkingDirectory=/opt/renova
 # Secrets live ONLY here: a root-owned, chmod 0600 file. Never in the repo or settings.
 EnvironmentFile=/etc/renova/renova.env
-ExecStart=/opt/renova/.venv/bin/gunicorn --config /opt/renova/deploy/gunicorn.conf.py renova.wsgi:application
+# Absolute path into the conda env (NOT `conda run` — systemd needs the real
+# main PID for signal forwarding/restart). Env lives at /opt/conda/envs/renova_env.
+ExecStart=/opt/conda/envs/renova_env/bin/gunicorn --config /opt/renova/deploy/gunicorn.conf.py renova.wsgi:application
 Restart=on-failure
 
 # Hardening — least privilege for a single-operator box.

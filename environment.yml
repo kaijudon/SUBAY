@@ -1,0 +1,13 @@
+# Conda environment for RENOVA (dev + production).
+#   conda env create -f environment.yml      # create renova_env
+#   conda env update -f environment.yml --prune   # sync after requirements change
+# requirements.txt stays the dependency source of truth; conda provides only the
+# interpreter, pip installs the rest.
+name: renova_env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.13
+  - pip
+  - pip:
+      - -r requirements.txt
