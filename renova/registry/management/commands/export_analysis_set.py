@@ -21,6 +21,7 @@ from django.core.management.base import BaseCommand, CommandError
 from renova.registry.models import (
     CMVSerology,
     Donor,
+    DonorVisit,
     OtherCondition,
     Recipient,
     RecipientVisit,
@@ -64,7 +65,21 @@ OTHERCONDITION_COLUMNS = [
     ("condition", "c"),
     ("present", "c"),
 ]
-VISIT_COLUMNS = [("id", "i"), ("recipient", "c"), ("day_offset", "i")]
+VISIT_COLUMNS = [
+    ("id", "i"),
+    ("recipient", "c"),
+    ("timepoint_label", "c"),
+    ("nominal_day", "i"),
+    ("actual_day_offset", "i"),
+    ("closure_shifted", "c"),
+    ("closure_reason", "c"),
+    ("shift_days_from_nominal", "i"),
+    ("completion_status", "c"),
+]
+# A donor has no kt_date anchor, so draw_date can never become an offset: it is
+# blanked entirely (consistent with donor-attached serology, DEC-006). The row
+# still lists the draw record without ever emitting the calendar date.
+DONORVISIT_COLUMNS = [("id", "i"), ("donor", "c"), ("day_offset", "i")]
 SEROLOGY_COLUMNS = [
     ("id", "i"),
     ("parent_type", "c"),
@@ -108,6 +123,7 @@ class Command(BaseCommand):
             self._write_recipients(staging)
             self._write_donors(staging)
             self._write_visits(staging)
+            self._write_donor_visits(staging)
             self._write_serologies(staging)
             self._write_other_conditions(staging)
             self._write_manifest(staging, version)
@@ -156,7 +172,28 @@ class Command(BaseCommand):
             w = csv.writer(fh)
             w.writerow([name for name, _ in VISIT_COLUMNS])
             for v in RecipientVisit.objects.select_related("recipient").order_by("pk"):
-                w.writerow([v.id, v.recipient_id, _offset(v.visit_date, v.recipient.kt_date)])
+                # All scheduling facts are derived properties (DEC-009); dates
+                # only ever leave as integer offsets. stretch_reference is free
+                # text and is deliberately NOT exported (leak vector).
+                w.writerow([
+                    v.id,
+                    v.recipient_id,
+                    v.timepoint_label,
+                    v.nominal_day,
+                    _offset(v.actual_visit_date, v.recipient.kt_date),
+                    _bool3(v.closure_shifted),
+                    v.closure_reason,
+                    v.shift_days_from_nominal,
+                    v.completion_status,
+                ])
+
+    def _write_donor_visits(self, base):
+        with (base / "donorvisit.csv").open("w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow([name for name, _ in DONORVISIT_COLUMNS])
+            for v in DonorVisit.objects.order_by("pk"):
+                # No kt anchor -> day_offset blank, never the calendar draw_date.
+                w.writerow([v.id, v.donor_id, ""])
 
     def _write_serologies(self, base):
         with (base / "cmvserology.csv").open("w", newline="") as fh:
@@ -177,6 +214,7 @@ class Command(BaseCommand):
             "recipient.csv": RECIPIENT_COLUMNS,
             "donor.csv": DONOR_COLUMNS,
             "recipientvisit.csv": VISIT_COLUMNS,
+            "donorvisit.csv": DONORVISIT_COLUMNS,
             "cmvserology.csv": SEROLOGY_COLUMNS,
             "othercondition.csv": OTHERCONDITION_COLUMNS,
         }

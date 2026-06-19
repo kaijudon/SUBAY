@@ -5,19 +5,27 @@ without emitting its own table. Derived clinical values (age, risk_stratum,
 is_positive) are @property and never stored, so a stored fact and its computed
 value can never silently disagree.
 """
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.db import models
 from simple_history.models import HistoricalRecords
 
+from .scheduling import TIMEPOINT_OFFSETS, ClosureDayLike, first_operating_day
 from .validators import subject_id_validator
 
 SEX_CHOICES = [("M", "Male"), ("F", "Female")]
 SEROSTATUS_CHOICES = [("POS", "Positive"), ("NEG", "Negative")]
 INDUCTION_AGENT_CHOICES = [("atg", "ATG"), ("basiliximab", "Basiliximab"), ("none", "None")]
 DONOR_TYPE_CHOICES = [("living", "Living"), ("deceased", "Deceased")]
+TIMEPOINT_LABEL_CHOICES = [(k, k) for k in TIMEPOINT_OFFSETS]
+CLOSURE_REASON_CHOICES = [
+    ("annexed_holiday", "Annexed holiday"),
+    ("emergency_closure", "Emergency closure"),
+]
+COMPLETION_STATUS_CHOICES = [("completed", "Completed"), ("missed_visit", "Missed visit")]
+VISIT_SHIFT_CAP_DAYS = 3
 
 
 class BaseSubject(models.Model):
@@ -135,13 +143,104 @@ class Donor(BaseSubject):
         return "POS" if s.is_positive else "NEG"
 
 
-class RecipientVisit(models.Model):
-    recipient = models.ForeignKey(Recipient, on_delete=models.CASCADE, related_name="visits")
-    visit_date = models.DateField()
+class ClosureDay(models.Model):
+    """A recognized clinic/lab closure day — the calendar the forward-shift SOP
+    reads (DEC-008). Editable by the Data Manager, auditable via history. A day
+    may close only clinic OR only lab; a visit needs BOTH operating, so either
+    flag forces the shift."""
+
+    date = models.DateField(unique=True)
+    reason = models.CharField(max_length=20, choices=CLOSURE_REASON_CHOICES)
+    reference = models.CharField(
+        max_length=120, blank=True, help_text="Annex/clause/memo cite. Free text — never exported."
+    )
+    closes_clinic = models.BooleanField(default=True)
+    closes_lab = models.BooleanField(default=True)
     history = HistoricalRecords()
 
     def __str__(self):
-        return f"{self.recipient_id} @ {self.visit_date}"
+        return f"{self.date} ({self.reason})"
+
+
+class RecipientVisit(models.Model):
+    """One protocol timepoint for a recipient. The genuine inputs are stored
+    (`timepoint_label`, `actual_visit_date`, `completion_status`); every
+    scheduling fact (`nominal_day`, `closure_*`, `shift_days_from_nominal`) is a
+    derived `@property` over kt_date + the ClosureDay calendar (DEC-009), so a
+    stored value can never drift from what the calendar implies."""
+
+    recipient = models.ForeignKey(Recipient, on_delete=models.CASCADE, related_name="visits")
+    timepoint_label = models.CharField(max_length=8, choices=TIMEPOINT_LABEL_CHOICES)
+    actual_visit_date = models.DateField()
+    completion_status = models.CharField(
+        max_length=12, choices=COMPLETION_STATUS_CHOICES, default="completed"
+    )
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return f"{self.recipient_id} {self.timepoint_label} @ {self.actual_visit_date}"
+
+    @property
+    def nominal_day(self):
+        """Protocol day-offset from kt_date for this timepoint."""
+        return TIMEPOINT_OFFSETS[self.timepoint_label]
+
+    @property
+    def nominal_date(self):
+        return self.recipient.kt_date + timedelta(days=self.nominal_day)
+
+    @property
+    def scheduled_date(self):
+        """First day clinic AND lab both operate, on/after the nominal date."""
+        return first_operating_day(self.nominal_date, ClosureDay.objects.all())
+
+    @property
+    def closure_shifted(self):
+        return self.scheduled_date != self.nominal_date
+
+    def _closure_at_nominal(self):
+        return ClosureDay.objects.filter(date=self.nominal_date).first()
+
+    @property
+    def closure_reason(self):
+        c = self._closure_at_nominal()
+        return c.reason if c else "none"
+
+    @property
+    def stretch_reference(self):
+        c = self._closure_at_nominal()
+        return c.reference if c else ""
+
+    @property
+    def shift_days_from_nominal(self):
+        """Signed days the actual draw fell from the nominal protocol day. With
+        `closure_reason` it separates forced-replacement (closure) from
+        patient-initiated non-attendance for CONSORT."""
+        return (self.actual_visit_date - self.nominal_date).days
+
+    def clean(self):
+        """+3-day cap (model layer, so shell + admin both honor it): an actual
+        date more than 3 days past nominal is only legal when the visit is
+        recorded `missed_visit` — there is no backward shift, no partial visit."""
+        if self.shift_days_from_nominal > VISIT_SHIFT_CAP_DAYS and (
+            self.completion_status != "missed_visit"
+        ):
+            raise ValidationError(
+                f"actual_visit_date is {self.shift_days_from_nominal} days past nominal "
+                f"(cap {VISIT_SHIFT_CAP_DAYS}); record it as completion_status='missed_visit'."
+            )
+
+
+class DonorVisit(models.Model):
+    """Minimal donor draw record: a donor + a draw_date, nothing more. A donor
+    gets NO recipient-grade timeline (no nominal_day/timepoint/closure shift)."""
+
+    donor = models.ForeignKey(Donor, on_delete=models.CASCADE, related_name="visits")
+    draw_date = models.DateField()
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return f"{self.donor_id} @ {self.draw_date}"
 
 
 class CMVSerology(models.Model):
