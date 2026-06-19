@@ -16,6 +16,8 @@ from .validators import subject_id_validator
 
 SEX_CHOICES = [("M", "Male"), ("F", "Female")]
 SEROSTATUS_CHOICES = [("POS", "Positive"), ("NEG", "Negative")]
+INDUCTION_AGENT_CHOICES = [("atg", "ATG"), ("basiliximab", "Basiliximab"), ("none", "None")]
+DONOR_TYPE_CHOICES = [("living", "Living"), ("deceased", "Deceased")]
 
 
 class BaseSubject(models.Model):
@@ -55,6 +57,28 @@ class Recipient(BaseSubject):
         blank=True,
         help_text="Pre-KT recipient CMV serostatus.",
     )
+    donor = models.ForeignKey(
+        "Donor",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="recipients",
+        help_text="Paired donor (optional — record may not be entered yet). PROTECT.",
+    )
+    has_diabetes = models.BooleanField(
+        null=True, blank=True, help_text="Three-state: True / False / Unknown (not asked)."
+    )
+    has_hypertension = models.BooleanField(
+        null=True, blank=True, help_text="Three-state: True / False / Unknown (not asked)."
+    )
+    dialysis_vintage_months = models.PositiveIntegerField(null=True, blank=True)
+    induction_agent = models.CharField(
+        max_length=12,
+        choices=INDUCTION_AGENT_CHOICES,
+        null=True,
+        blank=True,
+        help_text="atg / basiliximab / none. 'none' asserts absence; null = not recorded.",
+    )
     history = HistoricalRecords()
 
     @property
@@ -77,11 +101,38 @@ class Recipient(BaseSubject):
             return "intermediate"  # R+ (D+/R+ or D-/R+)
         return "low"  # D-/R-
 
+    @property
+    def has_donor_serostatus_mismatch(self):
+        """Flag (never overwrite) a clash between the recorded donor serostatus
+        and the paired donor's own serology. Surfaces for hand reconciliation;
+        both stored facts stay intact. False when either side is missing."""
+        if self.donor_id is None:
+            return False
+        donor_status = self.donor.baseline_serostatus
+        if not self.donor_serostatus or not donor_status:
+            return False
+        return self.donor_serostatus != donor_status
+
 
 class Donor(BaseSubject):
-    """A living donor — thin, one draw."""
+    """A living/deceased donor — thin, at most one baseline serology, one draw."""
 
+    donor_type = models.CharField(
+        max_length=8, choices=DONOR_TYPE_CHOICES, null=True, blank=True
+    )
+    relation = models.CharField(
+        max_length=40, null=True, blank=True, help_text="Optional relation to recipient."
+    )
     history = HistoricalRecords()
+
+    @property
+    def baseline_serostatus(self):
+        """POS/NEG from the donor's single serology (2.0 AU/mL threshold), else
+        None. Derived — never stored, so it can't disagree with the lab value."""
+        s = self.serologies.first()
+        if s is None or s.is_positive is None:
+            return None
+        return "POS" if s.is_positive else "NEG"
 
 
 class RecipientVisit(models.Model):
@@ -130,6 +181,11 @@ class CMVSerology(models.Model):
                     | models.Q(recipient_visit__isnull=True, donor__isnull=False)
                 ),
             ),
+            models.UniqueConstraint(
+                name="cmvserology_at_most_one_per_donor",
+                fields=["donor"],
+                condition=models.Q(donor__isnull=False),
+            ),
         ]
 
     @property
@@ -146,3 +202,20 @@ class CMVSerology(models.Model):
                 "A CMVSerology must attach to exactly one of recipient_visit or donor "
                 "(not both, not neither)."
             )
+
+
+class OtherCondition(models.Model):
+    """Long companion: one row per non-pre-specified condition on a recipient.
+
+    Long, not wide — no column-per-possibility on Recipient. `present` is a
+    three-state nullable bool (True / False / Unknown)."""
+
+    recipient = models.ForeignKey(
+        Recipient, on_delete=models.CASCADE, related_name="other_conditions"
+    )
+    condition = models.CharField(max_length=120)
+    present = models.BooleanField(null=True, blank=True)
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return f"{self.recipient_id}: {self.condition}"

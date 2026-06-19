@@ -8,7 +8,13 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from renova.registry.models import CMVSerology, Recipient, RecipientVisit
+from renova.registry.models import (
+    CMVSerology,
+    Donor,
+    OtherCondition,
+    Recipient,
+    RecipientVisit,
+)
 
 
 @pytest.fixture
@@ -50,7 +56,14 @@ def test_export_produces_one_csv_per_model_with_keys_intact(seeded, tmp_path):
     out = tmp_path / "v0.1"
 
     names = {p.name for p in out.iterdir()}
-    assert names == {"recipient.csv", "donor.csv", "recipientvisit.csv", "cmvserology.csv", "manifest.json"}
+    assert names == {
+        "recipient.csv",
+        "donor.csv",
+        "recipientvisit.csv",
+        "cmvserology.csv",
+        "othercondition.csv",
+        "manifest.json",
+    }
 
     with (out / "recipientvisit.csv").open(newline="") as fh:
         rows = list(csv.DictReader(fh))
@@ -128,3 +141,103 @@ def test_export_refuses_on_seeded_identifier(leaky_subject_id, db, tmp_path):
 
     assert not (tmp_path / "v0.1").exists()
     assert list(tmp_path.glob(".v0.1.staging-*")) == []
+
+
+# --- Slice 02: baseline + derived values flow through the de-id export ---
+
+
+@pytest.fixture
+def seeded_baseline(db):
+    """A recipient with confounders + a paired donor (mismatching serology) +
+    a long OtherCondition row — the full Slice 02 baseline surface."""
+    d = Donor.objects.create(
+        subject_id="DCMVD01",
+        date_of_birth=date(1975, 1, 1),
+        sex="F",
+        donor_type="living",
+        relation="sibling",
+    )
+    CMVSerology.objects.create(donor=d, value=Decimal("1.0"), drawn_date=date(2024, 12, 1))  # NEG
+    r = Recipient.objects.create(
+        subject_id="SCMVR07",
+        date_of_birth=date(1980, 1, 1),
+        sex="M",
+        kt_date=date(2025, 1, 1),
+        donor=d,
+        donor_serostatus="POS",  # disagrees with donor's NEG serology -> mismatch
+        recipient_serostatus="NEG",
+        has_diabetes=False,  # explicitly "no"
+        has_hypertension=None,  # not asked
+        dialysis_vintage_months=24,
+        induction_agent="none",
+    )
+    OtherCondition.objects.create(recipient=r, condition="gout")
+    return r
+
+
+def test_export_distinguishes_no_from_not_asked(seeded_baseline, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+
+    with (out / "recipient.csv").open(newline="") as fh:
+        row = list(csv.DictReader(fh))[0]
+    # has_diabetes=False is a non-empty, distinct cell; has_hypertension=None is blank.
+    assert row["has_diabetes"] == "false"
+    assert row["has_hypertension"] == ""
+    assert row["has_diabetes"] != row["has_hypertension"]
+
+
+def test_export_materializes_baseline_and_derived(seeded_baseline, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+
+    with (out / "recipient.csv").open(newline="") as fh:
+        row = list(csv.DictReader(fh))[0]
+    assert row["dialysis_vintage_months"] == "24"
+    assert row["induction_agent"] == "none"
+    assert row["has_donor_serostatus_mismatch"] == "true"  # POS vs NEG
+    assert row["donor"] == "DCMVD01"
+
+    with (out / "donor.csv").open(newline="") as fh:
+        drow = list(csv.DictReader(fh))[0]
+    assert drow["donor_type"] == "living"
+    assert drow["relation"] == "sibling"
+    assert drow["baseline_serostatus"] == "NEG"
+
+
+def test_export_othercondition_is_one_row_per_condition(seeded_baseline, tmp_path):
+    OtherCondition.objects.create(recipient=seeded_baseline, condition="prior cmv")
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+
+    with (out / "othercondition.csv").open(newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    assert len(rows) == 2
+    assert {r["condition"] for r in rows} == {"gout", "prior cmv"}
+    assert all(r["recipient"] == "SCMVR07" for r in rows)
+
+
+def test_export_de_id_leak_scan_over_new_columns_and_file(seeded_baseline, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+
+    for f in out.glob("*.csv"):
+        text = f.read_text()
+        assert "2025-01-01" not in text  # kt_date never as a calendar date
+        assert "2024-12-01" not in text  # donor drawn_date
+        assert "1980-01-01" not in text  # dob
+        assert "1975-01-01" not in text  # donor dob
+
+
+def test_export_refuses_on_leaky_other_condition(db, tmp_path):
+    r = Recipient.objects.create(
+        subject_id="SCMVR07",
+        date_of_birth=date(1980, 1, 1),
+        sex="M",
+        kt_date=date(2025, 1, 1),
+    )
+    OtherCondition.objects.create(recipient=r, condition="Maria Santos")  # name-shaped leak
+
+    with pytest.raises(CommandError):
+        call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    assert not (tmp_path / "v0.1").exists()

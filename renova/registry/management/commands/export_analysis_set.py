@@ -18,7 +18,13 @@ from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
 
-from renova.registry.models import CMVSerology, Donor, Recipient, RecipientVisit
+from renova.registry.models import (
+    CMVSerology,
+    Donor,
+    OtherCondition,
+    Recipient,
+    RecipientVisit,
+)
 
 # A bare calendar date should never appear in any output file.
 DATE_RX = re.compile(r"\d{4}-\d{2}-\d{2}")
@@ -38,8 +44,26 @@ RECIPIENT_COLUMNS = [
     ("risk_stratum", "c"),
     ("donor_serostatus", "c"),
     ("recipient_serostatus", "c"),
+    ("has_diabetes", "c"),
+    ("has_hypertension", "c"),
+    ("dialysis_vintage_months", "i"),
+    ("induction_agent", "c"),
+    ("has_donor_serostatus_mismatch", "c"),
+    ("donor", "c"),
 ]
-DONOR_COLUMNS = [("subject_id", "c"), ("sex", "c")]
+DONOR_COLUMNS = [
+    ("subject_id", "c"),
+    ("sex", "c"),
+    ("donor_type", "c"),
+    ("relation", "c"),
+    ("baseline_serostatus", "c"),
+]
+OTHERCONDITION_COLUMNS = [
+    ("id", "i"),
+    ("recipient", "c"),
+    ("condition", "c"),
+    ("present", "c"),
+]
 VISIT_COLUMNS = [("id", "i"), ("recipient", "c"), ("day_offset", "i")]
 SEROLOGY_COLUMNS = [
     ("id", "i"),
@@ -54,6 +78,15 @@ SEROLOGY_COLUMNS = [
 def _offset(d, kt_date):
     """Integer days from transplant (day 0). Negative for pre-KT dates."""
     return (d - kt_date).days
+
+
+def _bool3(v):
+    """Three-state bool -> distinguishable cells: True/False/Unknown become
+    "true"/"false"/"". Never `v or ""` — that would collapse False to "" and
+    lose the "no" vs "not asked" distinction."""
+    if v is None:
+        return ""
+    return "true" if v else "false"
 
 
 class Command(BaseCommand):
@@ -76,6 +109,7 @@ class Command(BaseCommand):
             self._write_donors(staging)
             self._write_visits(staging)
             self._write_serologies(staging)
+            self._write_other_conditions(staging)
             self._write_manifest(staging, version)
             self._assert_no_identifier_leak(staging)
         except Exception:
@@ -92,7 +126,12 @@ class Command(BaseCommand):
             for r in Recipient.objects.order_by("pk"):
                 w.writerow(
                     [r.subject_id, r.sex, r.age, r.risk_stratum,
-                     r.donor_serostatus or "", r.recipient_serostatus or ""]
+                     r.donor_serostatus or "", r.recipient_serostatus or "",
+                     _bool3(r.has_diabetes), _bool3(r.has_hypertension),
+                     r.dialysis_vintage_months if r.dialysis_vintage_months is not None else "",
+                     r.induction_agent or "",
+                     _bool3(r.has_donor_serostatus_mismatch),
+                     r.donor_id or ""]
                 )
 
     def _write_donors(self, base):
@@ -100,7 +139,17 @@ class Command(BaseCommand):
             w = csv.writer(fh)
             w.writerow([name for name, _ in DONOR_COLUMNS])
             for d in Donor.objects.order_by("pk"):
-                w.writerow([d.subject_id, d.sex])
+                w.writerow(
+                    [d.subject_id, d.sex, d.donor_type or "", d.relation or "",
+                     d.baseline_serostatus or ""]
+                )
+
+    def _write_other_conditions(self, base):
+        with (base / "othercondition.csv").open("w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow([name for name, _ in OTHERCONDITION_COLUMNS])
+            for c in OtherCondition.objects.order_by("pk"):
+                w.writerow([c.id, c.recipient_id, c.condition, _bool3(c.present)])
 
     def _write_visits(self, base):
         with (base / "recipientvisit.csv").open("w", newline="") as fh:
@@ -129,6 +178,7 @@ class Command(BaseCommand):
             "donor.csv": DONOR_COLUMNS,
             "recipientvisit.csv": VISIT_COLUMNS,
             "cmvserology.csv": SEROLOGY_COLUMNS,
+            "othercondition.csv": OTHERCONDITION_COLUMNS,
         }
         files = {}
         for name, columns in specs.items():

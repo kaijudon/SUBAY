@@ -1,7 +1,7 @@
 from django.contrib import admin
 from simple_history.admin import SimpleHistoryAdmin
 
-from .models import CMVSerology, Donor, Recipient, RecipientVisit
+from .models import CMVSerology, Donor, OtherCondition, Recipient, RecipientVisit
 from .sites import RenovaAdminSite  # re-exported; the class is defined in sites.py
 
 __all__ = ["RenovaAdminSite"]
@@ -18,11 +18,17 @@ class RecipientVisitInline(admin.TabularInline):
     extra = 0
 
 
+class OtherConditionInline(admin.TabularInline):
+    model = OtherCondition
+    extra = 0
+
+
 @admin.register(Recipient)
 class RecipientAdmin(SimpleHistoryAdmin):
-    list_display = ("subject_id", "sex", "kt_date", "age", "risk_stratum")
-    readonly_fields = ("age", "risk_stratum")  # derived, not editable
-    inlines = [RecipientVisitInline]
+    list_display = ("subject_id", "sex", "kt_date", "age", "risk_stratum", "induction_agent")
+    # derived values are read-only — computed, never editable
+    readonly_fields = ("age", "risk_stratum", "has_donor_serostatus_mismatch")
+    inlines = [RecipientVisitInline, OtherConditionInline]
 
 
 @admin.register(RecipientVisit)
@@ -33,7 +39,13 @@ class RecipientVisitAdmin(SimpleHistoryAdmin):
 
 @admin.register(Donor)
 class DonorAdmin(SimpleHistoryAdmin):
-    list_display = ("subject_id", "sex")
+    list_display = ("subject_id", "sex", "donor_type", "relation", "baseline_serostatus")
+    readonly_fields = ("baseline_serostatus",)  # derived from the single serology
+
+
+@admin.register(OtherCondition)
+class OtherConditionAdmin(SimpleHistoryAdmin):
+    list_display = ("id", "recipient", "condition", "present")
 
 
 @admin.register(CMVSerology)
