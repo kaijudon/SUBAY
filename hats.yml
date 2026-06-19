@@ -43,7 +43,7 @@ hats:
     description: "Implements the slice test-first by following the plan; runs pytest to green."
     backend:
       command: claude
-      args: ["--model", "claude-sonnet-4-6"]
+      args: ["--model", "claude-opus-4-8"]
     triggers: ["plan.ready", "review.changes_requested"]
     publishes: ["build.done", "build.blocked"]
     instructions: |
