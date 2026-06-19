@@ -7,13 +7,3 @@ event_loop:
 RObot:
   enabled: true
   timeout_seconds: 120
-# Override the default guardrails. The stock default ("Backpressure is law -
-# tests/typecheck/lint/audit must pass") forces agents to chase lint/typecheck/
-# audit/coverage evidence this Django+pytest project has no tooling for, which
-# deadlocks the build.done gate. Relaxed to what the project actually enforces.
-guardrails:
-  - "Backpressure: the full pytest suite and `manage.py makemigrations --check` must pass before reporting done. This project has NO lint/typecheck/audit/coverage/complexity/duplication tooling configured — do not block on those categories or invent evidence for them."
-  - "Don't assume 'not implemented' - search first."
-  - "When behavior is runnable, exercise the real path (the management command / shell) and try at least one adversarial case before reporting done."
-  - "Confidence protocol: score decisions 0-100. >80 proceed autonomously; 50-80 proceed + document in .ralph/agent/decisions.md; <50 choose safe default + document."
-  - "Commit atomically - one logical change per commit, capture the why."
