@@ -60,14 +60,14 @@ hats:
       Work test-first (red → green):
         1. Write/extend tests under renova/registry/tests/ per the plan,
            including the de-id leak-check assertion.
-        2. Run: .venv/bin/python -m pytest -q   — confirm new tests FAIL.
+        2. Run: conda run -n renova_env python -m pytest -q   — confirm new tests FAIL.
         3. Implement models, migrations, admin, extend export_analysis_set
            until tests pass.
-        4. Run: .venv/bin/python manage.py makemigrations --check  (no missing)
-           and .venv/bin/python -m pytest -q  — full suite GREEN.
+        4. Run: conda run -n renova_env python manage.py makemigrations --check  (no missing)
+           and conda run -n renova_env python -m pytest -q  — full suite GREEN.
         5. Run the backpressure collector — this produces the REAL evidence the
            build.done gate requires (do NOT hand-write or fabricate it):
-             .venv/bin/python scripts/backpressure.py
+             conda run -n renova_env python scripts/backpressure.py
            It runs tests/lint/typecheck/audit/coverage/complexity/duplication and
            exits 0 only when every check genuinely passes, printing one evidence
            line to stdout. If it exits non-zero, FIX the failing category (or emit
@@ -94,8 +94,8 @@ hats:
       Do NOT write feature code — verify only.
 
       Check every acceptance-criteria checkbox is actually met. Then:
-        - Run .venv/bin/python -m pytest -q — must be fully green.
-        - Independently re-run .venv/bin/python scripts/backpressure.py — it must
+        - Run conda run -n renova_env python -m pytest -q — must be fully green.
+        - Independently re-run conda run -n renova_env python scripts/backpressure.py — it must
           exit 0 and its evidence line must match what the Builder put in
           build.done. Reject if the Builder's payload was hand-written or differs
           from the collector's real output.
