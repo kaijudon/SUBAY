@@ -73,11 +73,27 @@ hats:
            line to stdout. If it exits non-zero, FIX the failing category (or emit
            build.blocked) — never massage the payload to get past the gate.
 
-      When green, emit build.done with the collector's stdout line VERBATIM as the
-      payload (e.g. "tests: pass, lint: pass, typecheck: pass, audit: pass,
-      coverage: pass, complexity: <score>, duplication: pass, specs: pass"). If
-      blocked for a reason you cannot resolve, STOP and emit build.blocked with a
-      one-line reason.
+      When green, emit build.done using the collector's LAST stdout line as the
+      payload — never retype, summarize, or reformat it. ralph's backpressure
+      gate is a LITERAL token matcher: "coverage: 94.4%" is REJECTED, only
+      "coverage: pass" passes; "tests: pass (74)" is REJECTED, only "tests: pass"
+      passes. A rejected build.done is recorded as build.blocked, and three in a
+      row aborts the loop (loop_stale). So emit it MECHANICALLY, exactly like this
+      (do NOT hand-build the payload string yourself):
+
+        conda run -n renova_env python scripts/backpressure.py > .ralph/bp.txt; rc=$?
+        if [ "$rc" -eq 0 ]; then
+          ralph emit build.done "$(tail -n 1 .ralph/bp.txt)"
+        else
+          ralph emit build.blocked "backpressure rc=$rc: $(tail -n 1 .ralph/bp.txt)"
+        fi
+
+      The collector's last line is already the exact gate string
+      ("tests: pass, lint: pass, typecheck: pass, audit: pass, coverage: pass,
+      complexity: <score>, duplication: pass, specs: pass"). If the collector
+      exits non-zero, FIX the failing category and re-run — never massage the
+      payload to get past the gate. If blocked for a reason you cannot resolve,
+      STOP and emit build.blocked with a one-line reason.
 
   # ── 3. Reviewer: verify criteria + privacy gate ─────────────────────────────
   reviewer:
