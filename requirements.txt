@@ -6,6 +6,8 @@ qrcode>=7.4
 django-simple-history>=3.7
 pytest>=8.3
 pytest-django>=4.9
+# gunicorn: production WSGI server (deploy/renova.service ExecStart).
+gunicorn>=23
 # mypy: typecheck backpressure category (DEC-004). Only category with no honest
 # zero-dependency stdlib equivalent; run non-strict on plain-Python modules.
 mypy>=1.11
