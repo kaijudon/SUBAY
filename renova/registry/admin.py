@@ -7,9 +7,12 @@ from .models import (
     CMVSerology,
     Donor,
     DonorVisit,
+    DrugLevel,
     OtherCondition,
     Recipient,
     RecipientVisit,
+    RenalFunction,
+    TBNKPanel,
 )
 from .sites import RenovaAdminSite  # re-exported; the class is defined in sites.py
 
@@ -24,6 +27,24 @@ class CMVSerologyInline(admin.TabularInline):
 
 class CMVQuantitativeInline(admin.TabularInline):
     model = CMVQuantitative
+    fk_name = "recipient_visit"
+    extra = 0
+
+
+class TBNKPanelInline(admin.TabularInline):
+    model = TBNKPanel
+    fk_name = "recipient_visit"
+    extra = 0
+
+
+class RenalFunctionInline(admin.TabularInline):
+    model = RenalFunction
+    fk_name = "recipient_visit"
+    extra = 0
+
+
+class DrugLevelInline(admin.TabularInline):
+    model = DrugLevel
     fk_name = "recipient_visit"
     extra = 0
 
@@ -64,7 +85,10 @@ class RecipientVisitAdmin(SimpleHistoryAdmin):
     readonly_fields = (
         "nominal_day", "closure_shifted", "closure_reason", "shift_days_from_nominal",
     )
-    inlines = [CMVSerologyInline, CMVQuantitativeInline]
+    inlines = [
+        CMVSerologyInline, CMVQuantitativeInline,
+        TBNKPanelInline, RenalFunctionInline, DrugLevelInline,
+    ]
 
 
 @admin.register(ClosureDay)
@@ -101,4 +125,29 @@ class CMVSerologyAdmin(SimpleHistoryAdmin):
 class CMVQuantitativeAdmin(SimpleHistoryAdmin):
     list_display = (
         "id", "recipient_visit", "donor", "value", "result_status", "drawn_date",
+    )
+
+
+@admin.register(TBNKPanel)
+class TBNKPanelAdmin(SimpleHistoryAdmin):
+    list_display = (
+        "id", "recipient_visit", "donor", "cd3_cd4_count", "cd3_cd8_count",
+        "cd4_cd8_ratio", "drawn_date",
+    )
+    readonly_fields = ("cd4_cd8_ratio",)  # derived, never stored
+
+
+@admin.register(RenalFunction)
+class RenalFunctionAdmin(SimpleHistoryAdmin):
+    list_display = (
+        "id", "recipient_visit", "donor", "serum_creatinine_mg_dl", "eGFR",
+        "result_status", "drawn_date",
+    )
+    readonly_fields = ("eGFR",)  # derived via CKD-EPI 2021, never stored
+
+
+@admin.register(DrugLevel)
+class DrugLevelAdmin(SimpleHistoryAdmin):
+    list_display = (
+        "id", "recipient_visit", "donor", "analyte", "value", "result_status", "drawn_date",
     )
