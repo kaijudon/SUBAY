@@ -5,9 +5,12 @@ from renova.registry.admin import RenovaAdminSite
 from renova.registry.models import (
     CMVQuantitative,
     CMVSerology,
+    DrugLevel,
     OtherCondition,
     Recipient,
     RecipientVisit,
+    RenalFunction,
+    TBNKPanel,
 )
 
 
@@ -52,3 +55,30 @@ def test_recipient_admin_has_other_condition_inline_and_mismatch_readonly():
 
 def test_other_condition_is_registered():
     assert OtherCondition in admin.site._registry
+
+
+# --- Slice 06: TBNK / renal / drug-level panels as visit inlines ---
+
+
+def test_visit_admin_has_slice06_lab_inlines():
+    ma = admin.site._registry[RecipientVisit]
+    inline_models = [i.model for i in ma.inlines]
+    assert TBNKPanel in inline_models
+    assert RenalFunction in inline_models
+    assert DrugLevel in inline_models
+
+
+def test_slice06_models_are_registered():
+    assert TBNKPanel in admin.site._registry
+    assert RenalFunction in admin.site._registry
+    assert DrugLevel in admin.site._registry
+
+
+def test_tbnk_admin_has_ratio_readonly():
+    ma = admin.site._registry[TBNKPanel]
+    assert "cd4_cd8_ratio" in ma.readonly_fields
+
+
+def test_renal_admin_has_egfr_readonly():
+    ma = admin.site._registry[RenalFunction]
+    assert "eGFR" in ma.readonly_fields

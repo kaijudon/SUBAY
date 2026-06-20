@@ -14,9 +14,12 @@ from renova.registry.models import (
     CMVSerology,
     Donor,
     DonorVisit,
+    DrugLevel,
     OtherCondition,
     Recipient,
     RecipientVisit,
+    RenalFunction,
+    TBNKPanel,
 )
 
 
@@ -69,6 +72,9 @@ def test_export_produces_one_csv_per_model_with_keys_intact(seeded, tmp_path):
         "cmvserology.csv",
         "cmvquantitative.csv",
         "othercondition.csv",
+        "tbnkpanel.csv",
+        "renalfunction.csv",
+        "druglevel.csv",
         "manifest.json",
     }
 
@@ -489,3 +495,125 @@ def test_export_manifest_lists_quantitative_file(seeded_slice05, tmp_path):
     manifest = json.loads((out / "manifest.json").read_text())
     assert "cmvquantitative.csv" in manifest["files"]
     assert manifest["files"]["cmvquantitative.csv"]["columns"]["parent_id"] == "c"
+
+
+# --- Slice 06: TBNK / renal / drug-level panels flow through the de-id export ---
+
+
+@pytest.fixture
+def seeded_slice06(db):
+    """A recipient with a TBNK panel, a renal-function draw, and a drug level,
+    plus a donor-attached drug level — the full Slice 06 export surface."""
+    d = Donor.objects.create(subject_id="DCMVD01", date_of_birth=date(1975, 1, 1), sex="F")
+    DrugLevel.objects.create(
+        donor=d, analyte="tacrolimus", value=Decimal("5.0"), drawn_date=date(2024, 12, 1)
+    )
+    r = Recipient.objects.create(
+        subject_id="SCMVR07", date_of_birth=date(1980, 1, 1), sex="M", kt_date=date(2025, 1, 1)
+    )
+    v = RecipientVisit.objects.create(
+        recipient=r, timepoint_label="day_180", actual_visit_date=date(2025, 6, 1)
+    )
+    TBNKPanel.objects.create(
+        recipient_visit=v, drawn_date=date(2025, 6, 1),
+        cd3_count=Decimal("1200"), cd3_pct=Decimal("75"),
+        cd3_cd4_count=Decimal("800"), cd3_cd4_pct=Decimal("50"),
+        cd3_cd8_count=Decimal("400"), cd3_cd8_pct=Decimal("25"),
+        cd19_count=Decimal("160"), cd19_pct=Decimal("10"),
+        nk_count=Decimal("240"), nk_pct=Decimal("15"),
+        cd4_cd8_dp_count=Decimal("16"), cd4_cd8_dp_pct=Decimal("1"),
+        cd4_cd8_dn_count=Decimal("16"), cd4_cd8_dn_pct=Decimal("1"),
+    )
+    RenalFunction.objects.create(
+        recipient_visit=v, serum_creatinine_mg_dl=Decimal("1.0"), drawn_date=date(2025, 6, 1)
+    )
+    DrugLevel.objects.create(
+        recipient_visit=v, analyte="tacrolimus", value=Decimal("8.0"), drawn_date=date(2025, 6, 1)
+    )
+    return r
+
+
+def test_export_writes_slice06_files(seeded_slice06, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    for name in ("tbnkpanel.csv", "renalfunction.csv", "druglevel.csv"):
+        assert (out / name).exists()
+
+
+def test_export_tbnk_is_wide_with_materialized_ratio(seeded_slice06, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    with (out / "tbnkpanel.csv").open(newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    assert len(rows) == 1  # one wide row carries all seven subsets
+    row = rows[0]
+    for col in ("cd3_count", "cd3_cd4_count", "cd3_cd8_count", "cd19_count",
+                "nk_count", "cd4_cd8_dp_count", "cd4_cd8_dn_count"):
+        assert col in row
+    assert row["cd4_cd8_ratio"] == "2"  # 800 / 400, materialized derived
+    assert row["day_offset"] == "151"  # 2025-06-01 is 151 days after kt day 0
+
+
+def test_export_renal_has_creatinine_and_materialized_egfr_no_lab_egfr(seeded_slice06, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    with (out / "renalfunction.csv").open(newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    row = rows[0]
+    assert row["serum_creatinine_mg_dl"] == "1.00"
+    assert float(row["eGFR"]) == pytest.approx(94.59, abs=0.1)  # materialized CKD-EPI 2021
+    # no lab-reported eGFR column exists anywhere in the file
+    for col in row:
+        assert col == "eGFR" or "egfr" not in col.lower()
+
+
+def test_export_druglevel_is_long_per_result(seeded_slice06, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    with (out / "druglevel.csv").open(newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    assert len(rows) == 2  # one donor row, one recipient-visit row
+    assert {r["parent_type"] for r in rows} == {"donor", "recipient_visit"}
+    recip = [r for r in rows if r["parent_type"] == "recipient_visit"][0]
+    assert recip["analyte"] == "tacrolimus"
+    assert recip["value"] == "8.00"
+    assert recip["day_offset"] == "151"
+    donor_row = [r for r in rows if r["parent_type"] == "donor"][0]
+    assert donor_row["day_offset"] == ""  # no kt anchor -> blank, never a calendar date
+
+
+def test_export_manifest_lists_slice06_files(seeded_slice06, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    manifest = json.loads((out / "manifest.json").read_text())
+    for name in ("tbnkpanel.csv", "renalfunction.csv", "druglevel.csv"):
+        assert name in manifest["files"]
+
+
+def test_export_slice06_leak_scan_over_new_files_and_columns(seeded_slice06, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    for f in out.glob("*.csv"):
+        text = f.read_text()
+        assert "2025-06-01" not in text  # drawn_date never a calendar date
+        assert "2024-12-01" not in text  # donor drawn_date blanked
+        assert "2025-01-01" not in text  # kt_date
+        assert "1980-01-01" not in text  # dob
+        assert "1975-01-01" not in text  # donor dob
+
+
+def test_export_refuses_on_leaky_slice06_column(db, tmp_path):
+    """A name-shaped value in an exported Slice 06 column triggers refusal with
+    nothing written (the chokepoint stays intact)."""
+    r = Recipient.objects.create(
+        subject_id="SCMVR07", date_of_birth=date(1980, 1, 1), sex="M", kt_date=date(2025, 1, 1)
+    )
+    v = RecipientVisit.objects.create(
+        recipient=r, timepoint_label="day_7", actual_visit_date=date(2025, 1, 8)
+    )
+    d = DrugLevel(recipient_visit=v, value=Decimal("8.0"), drawn_date=date(2025, 1, 8))
+    d.analyte = "Maria Santos"  # name-shaped leak into an exported column
+    d.save()  # bypass clean() to stage a leak
+    with pytest.raises(CommandError):
+        call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    assert not (tmp_path / "v0.1").exists()

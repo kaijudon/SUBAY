@@ -27,6 +27,9 @@ from renova.registry.models import (
     CMVSerology,
     CMVQuantitative,
     OtherCondition,
+    TBNKPanel,
+    RenalFunction,
+    DrugLevel,
 )
 
 # A bare calendar date should never appear in any output file.
@@ -107,6 +110,43 @@ QUANTITATIVE_COLUMNS = [
     ("result_status", "c"),
     ("day_offset", "i"),
 ]
+# The seven co-drawn subsets stay one WIDE row; cd4_cd8_ratio is materialized
+# derived (never a stored column). Donor-attached rows blank day_offset.
+TBNK_SUBSET_FIELDS = [
+    "cd3_count", "cd3_pct",
+    "cd3_cd4_count", "cd3_cd4_pct",
+    "cd3_cd8_count", "cd3_cd8_pct",
+    "cd19_count", "cd19_pct",
+    "nk_count", "nk_pct",
+    "cd4_cd8_dp_count", "cd4_cd8_dp_pct",
+    "cd4_cd8_dn_count", "cd4_cd8_dn_pct",
+]
+TBNK_COLUMNS = (
+    [("id", "i"), ("parent_type", "c"), ("parent_id", "c")]
+    + [(f, "d") for f in TBNK_SUBSET_FIELDS]
+    + [("cd4_cd8_ratio", "d"), ("day_offset", "i")]
+)
+# Raw creatinine in, eGFR materialized derived out (CKD-EPI 2021). No
+# lab-reported eGFR column exists — there is no field to export.
+RENAL_COLUMNS = [
+    ("id", "i"),
+    ("parent_type", "c"),
+    ("parent_id", "c"),
+    ("serum_creatinine_mg_dl", "d"),
+    ("eGFR", "d"),
+    ("result_status", "c"),
+    ("day_offset", "i"),
+]
+# Long drug-trough series: one row per result, mirroring CMVQuantitative.
+DRUGLEVEL_COLUMNS = [
+    ("id", "i"),
+    ("parent_type", "c"),
+    ("parent_id", "c"),
+    ("analyte", "c"),
+    ("value", "d"),
+    ("result_status", "c"),
+    ("day_offset", "i"),
+]
 
 
 def _offset(d, kt_date):
@@ -145,6 +185,9 @@ class Command(BaseCommand):
             self._write_donor_visits(staging)
             self._write_serologies(staging)
             self._write_quantitatives(staging)
+            self._write_tbnk(staging)
+            self._write_renal(staging)
+            self._write_druglevels(staging)
             self._write_other_conditions(staging)
             self._write_manifest(staging, version)
             self._assert_no_identifier_leak(staging)
@@ -255,6 +298,63 @@ class Command(BaseCommand):
                 w.writerow([q.id, parent_type, parent_id, value_cell,
                             q.result_status, offset])
 
+    def _write_tbnk(self, base):
+        with (base / "tbnkpanel.csv").open("w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow([name for name, _ in TBNK_COLUMNS])
+            qs = TBNKPanel.objects.select_related(
+                "recipient_visit__recipient", "donor"
+            ).order_by("pk")
+            for p in qs:
+                if p.recipient_visit_id is not None:
+                    parent_type, parent_id = "recipient_visit", p.recipient_visit_id
+                    offset = _offset(p.drawn_date, p.recipient_visit.recipient.kt_date)
+                else:
+                    parent_type, parent_id, offset = "donor", p.donor_id, ""
+                subset_cells = [
+                    getattr(p, f) if getattr(p, f) is not None else ""
+                    for f in TBNK_SUBSET_FIELDS
+                ]
+                ratio = p.cd4_cd8_ratio
+                ratio_cell = ratio if ratio is not None else ""
+                w.writerow([p.id, parent_type, parent_id, *subset_cells, ratio_cell, offset])
+
+    def _write_renal(self, base):
+        with (base / "renalfunction.csv").open("w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow([name for name, _ in RENAL_COLUMNS])
+            qs = RenalFunction.objects.select_related(
+                "recipient_visit__recipient", "donor"
+            ).order_by("pk")
+            for rf in qs:
+                if rf.recipient_visit_id is not None:
+                    parent_type, parent_id = "recipient_visit", rf.recipient_visit_id
+                    offset = _offset(rf.drawn_date, rf.recipient_visit.recipient.kt_date)
+                else:
+                    parent_type, parent_id, offset = "donor", rf.donor_id, ""
+                cr_cell = rf.serum_creatinine_mg_dl if rf.serum_creatinine_mg_dl is not None else ""
+                egfr = rf.eGFR
+                egfr_cell = egfr if egfr is not None else ""
+                w.writerow([rf.id, parent_type, parent_id, cr_cell, egfr_cell,
+                            rf.result_status, offset])
+
+    def _write_druglevels(self, base):
+        with (base / "druglevel.csv").open("w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow([name for name, _ in DRUGLEVEL_COLUMNS])
+            qs = DrugLevel.objects.select_related(
+                "recipient_visit__recipient", "donor"
+            ).order_by("pk")
+            for d in qs:
+                if d.recipient_visit_id is not None:
+                    parent_type, parent_id = "recipient_visit", d.recipient_visit_id
+                    offset = _offset(d.drawn_date, d.recipient_visit.recipient.kt_date)
+                else:
+                    parent_type, parent_id, offset = "donor", d.donor_id, ""
+                value_cell = d.value if d.value is not None else ""
+                w.writerow([d.id, parent_type, parent_id, d.analyte, value_cell,
+                            d.result_status, offset])
+
     def _write_manifest(self, base, version):
         specs = {
             "recipient.csv": RECIPIENT_COLUMNS,
@@ -263,6 +363,9 @@ class Command(BaseCommand):
             "donorvisit.csv": DONORVISIT_COLUMNS,
             "cmvserology.csv": SEROLOGY_COLUMNS,
             "cmvquantitative.csv": QUANTITATIVE_COLUMNS,
+            "tbnkpanel.csv": TBNK_COLUMNS,
+            "renalfunction.csv": RENAL_COLUMNS,
+            "druglevel.csv": DRUGLEVEL_COLUMNS,
             "othercondition.csv": OTHERCONDITION_COLUMNS,
         }
         files = {}

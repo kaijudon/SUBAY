@@ -42,7 +42,45 @@ RECIPIENT_COMPLETION_STATUS_CHOICES = [
 # QC/lab failure). A missing observation is a result-level fact only — it never
 # touches the recipient's completion_status.
 RESULT_STATUS_CHOICES = [("reported", "Reported"), ("missing", "Missing")]
+
+
+def _result_status_field(help_text="reported = a value was obtained; missing = QC/lab failure (no value)."):
+    """Shared `result_status` field for lab-result models: distinguishes a real
+    value from a QC/lab failure. A missing observation never alters cohort
+    disposition. Factory (not an abstract base) so each model keeps its own field
+    ordering and the generated field is byte-identical (no migration churn)."""
+    return models.CharField(
+        max_length=8,
+        choices=RESULT_STATUS_CHOICES,
+        default="reported",
+        help_text=help_text,
+    )
+
+
+def _status_matches_value_constraint(name, value_field="value", status_field="result_status"):
+    """CheckConstraint: a 'reported' status requires a non-null value; a 'missing'
+    status forbids one. Shared across lab-result models — the value/status column
+    names vary, so the rule lives in one place rather than copy-pasted per model."""
+    return models.CheckConstraint(
+        name=name,
+        condition=(
+            models.Q(**{status_field: "reported", f"{value_field}__isnull": False})
+            | models.Q(**{status_field: "missing", f"{value_field}__isnull": True})
+        ),
+    )
+
+
+DRUG_ANALYTE_CHOICES = [("tacrolimus", "Tacrolimus"), ("everolimus", "Everolimus")]
 VISIT_SHIFT_CAP_DAYS = 3
+
+
+def _age_at(subject, ref_date):
+    """Whole years from a subject's DOB to ref_date (same convention as
+    Recipient.age). None when either input is missing."""
+    if subject is None or not subject.date_of_birth or not ref_date:
+        return None
+    dob = subject.date_of_birth
+    return ref_date.year - dob.year - ((ref_date.month, ref_date.day) < (dob.month, dob.day))
 
 
 class BaseSubject(models.Model):
@@ -287,7 +325,36 @@ class DonorVisit(models.Model):
         return f"{self.donor_id} @ {self.draw_date}"
 
 
-class CMVSerology(models.Model):
+class ExactlyOneParentMixin(models.Model):
+    """Abstract base for lab-result models that attach to EXACTLY ONE parent —
+    a RecipientVisit XOR a Donor. Subclasses declare the two FKs and the DB
+    CheckConstraint; this centralizes the friendly clean() guard so the rule
+    isn't copy-pasted per model. Subclasses with extra validation override
+    clean() and call super().clean() first."""
+
+    class Meta:
+        abstract = True
+
+    def clean(self):
+        super().clean()
+        has_visit = self.recipient_visit_id is not None
+        has_donor = self.donor_id is not None
+        if has_visit == has_donor:
+            raise ValidationError(
+                f"A {type(self).__name__} must attach to exactly one of "
+                "recipient_visit or donor (not both, not neither)."
+            )
+
+    def _validate_value_matches_status(self, value):
+        """A reported result carries a value; a missing observation does not.
+        Shared by subclasses (the value column varies) so it isn't copy-pasted."""
+        if self.result_status == "reported" and value is None:
+            raise ValidationError("A reported result must carry a value.")
+        if self.result_status == "missing" and value is not None:
+            raise ValidationError("A missing observation must not carry a value.")
+
+
+class CMVSerology(ExactlyOneParentMixin):
     """One lab result attached to EXACTLY ONE parent: a recipient visit OR a donor.
 
     Enforced twice: clean() for a friendly admin error, a DB CheckConstraint for an
@@ -355,19 +422,9 @@ class CMVSerology(models.Model):
                 fields=["donor"],
                 condition=models.Q(donor__isnull=False),
             ),
-            models.CheckConstraint(
-                name="cmvserology_value_matches_result_status",
-                condition=(
-                    models.Q(result_status="reported", value__isnull=False)
-                    | models.Q(result_status="missing", value__isnull=True)
-                ),
-            ),
-            models.CheckConstraint(
-                name="cmvserology_igm_value_matches_status",
-                condition=(
-                    models.Q(igm_status="reported", igm_value__isnull=False)
-                    | models.Q(igm_status="missing", igm_value__isnull=True)
-                ),
+            _status_matches_value_constraint("cmvserology_value_matches_result_status"),
+            _status_matches_value_constraint(
+                "cmvserology_igm_value_matches_status", "igm_value", "igm_status"
             ),
         ]
 
@@ -386,24 +443,15 @@ class CMVSerology(models.Model):
         return self.igm_value >= self.POSITIVE_THRESHOLD
 
     def clean(self):
-        has_visit = self.recipient_visit_id is not None
-        has_donor = self.donor_id is not None
-        if has_visit == has_donor:
-            raise ValidationError(
-                "A CMVSerology must attach to exactly one of recipient_visit or donor "
-                "(not both, not neither)."
-            )
-        if self.result_status == "reported" and self.value is None:
-            raise ValidationError("A reported result must carry a value.")
-        if self.result_status == "missing" and self.value is not None:
-            raise ValidationError("A missing observation must not carry a value.")
+        super().clean()
+        self._validate_value_matches_status(self.value)
         if self.igm_status == "reported" and self.igm_value is None:
             raise ValidationError("A reported IgM result must carry a value.")
         if self.igm_status == "missing" and self.igm_value is not None:
             raise ValidationError("A missing IgM observation must not carry a value.")
 
 
-class CMVQuantitative(models.Model):
+class CMVQuantitative(ExactlyOneParentMixin):
     """One CMV viral-load measurement, stored LONG — one row per result so a
     patient's repeating draws form an ordered series (Meta.ordering by drawn_date)
     the episode deriver (slice 07) consumes, never forced into a fixed shape.
@@ -459,27 +507,202 @@ class CMVQuantitative(models.Model):
                     | models.Q(recipient_visit__isnull=True, donor__isnull=False)
                 ),
             ),
+            _status_matches_value_constraint("cmvquantitative_value_matches_result_status"),
+        ]
+
+    def clean(self):
+        super().clean()
+        self._validate_value_matches_status(self.value)
+
+
+class TBNKPanel(ExactlyOneParentMixin):
+    """One lymphocyte-subset panel, stored WIDE — the seven subsets are co-drawn
+    in a single assay run, so they stay one row (wide-vs-long-by-variability).
+    Each subset is two stored columns: absolute count (cells/µL) AND % lymphocytes.
+    cd4_cd8_ratio is DERIVED (derive-don't-store), never a column.
+
+    Attaches to EXACTLY ONE parent (recipient visit XOR donor), enforced twice
+    like CMVQuantitative: clean() for a friendly admin error, a DB CheckConstraint
+    for an unbreakable guarantee."""
+
+    recipient_visit = models.ForeignKey(
+        RecipientVisit,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="tbnk_panels",
+    )
+    donor = models.ForeignKey(
+        Donor,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="tbnk_panels",
+    )
+    cd3_count = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="CD3+ absolute count, cells/µL.")
+    cd3_pct = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True, help_text="CD3+ % of lymphocytes.")
+    cd3_cd4_count = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="CD3+CD4+ absolute count, cells/µL.")
+    cd3_cd4_pct = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True, help_text="CD3+CD4+ % of lymphocytes.")
+    cd3_cd8_count = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="CD3+CD8+ absolute count, cells/µL.")
+    cd3_cd8_pct = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True, help_text="CD3+CD8+ % of lymphocytes.")
+    cd19_count = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="CD19+ absolute count, cells/µL.")
+    cd19_pct = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True, help_text="CD19+ % of lymphocytes.")
+    nk_count = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="NK CD3−CD16+CD56+ absolute count, cells/µL.")
+    nk_pct = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True, help_text="NK CD3−CD16+CD56+ % of lymphocytes.")
+    cd4_cd8_dp_count = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="CD4+CD8+ double-positive absolute count, cells/µL.")
+    cd4_cd8_dp_pct = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True, help_text="CD4+CD8+ double-positive % of lymphocytes.")
+    cd4_cd8_dn_count = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="CD4−CD8− double-negative absolute count, cells/µL.")
+    cd4_cd8_dn_pct = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True, help_text="CD4−CD8− double-negative % of lymphocytes.")
+    drawn_date = models.DateField()
+    history = HistoricalRecords()
+
+    class Meta:
+        constraints = [
             models.CheckConstraint(
-                name="cmvquantitative_value_matches_result_status",
+                name="tbnkpanel_exactly_one_parent",
                 condition=(
-                    models.Q(result_status="reported", value__isnull=False)
-                    | models.Q(result_status="missing", value__isnull=True)
+                    models.Q(recipient_visit__isnull=False, donor__isnull=True)
+                    | models.Q(recipient_visit__isnull=True, donor__isnull=False)
                 ),
             ),
         ]
 
+    @property
+    def cd4_cd8_ratio(self):
+        """CD3+CD4+ count ÷ CD3+CD8+ count. Derived, never stored — None when
+        either count is missing or the denominator is zero."""
+        if self.cd3_cd4_count is None or not self.cd3_cd8_count:
+            return None
+        return self.cd3_cd4_count / self.cd3_cd8_count
+
+
+class RenalFunction(ExactlyOneParentMixin):
+    """One renal-function draw. Stores RAW serum creatinine only; eGFR is DERIVED
+    via CKD-EPI 2021 race-free and never stored. Any lab-reported eGFR is IGNORED
+    by giving it no column to live in — a stored-but-unused eGFR would invite a
+    site-equation step-artifact at a multi-site join (US 28).
+
+    Attaches to EXACTLY ONE parent (recipient visit XOR donor), enforced twice."""
+
+    recipient_visit = models.ForeignKey(
+        RecipientVisit,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="renal_functions",
+    )
+    donor = models.ForeignKey(
+        Donor,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="renal_functions",
+    )
+    serum_creatinine_mg_dl = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Raw serum creatinine, mg/dL. Null only when result_status='missing'.",
+    )
+    result_status = _result_status_field()
+    drawn_date = models.DateField()
+    history = HistoricalRecords()
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                name="renalfunction_exactly_one_parent",
+                condition=(
+                    models.Q(recipient_visit__isnull=False, donor__isnull=True)
+                    | models.Q(recipient_visit__isnull=True, donor__isnull=False)
+                ),
+            ),
+            _status_matches_value_constraint(
+                "renalfunction_value_matches_result_status", "serum_creatinine_mg_dl"
+            ),
+        ]
+
+    @property
+    def eGFR(self):
+        """CKD-EPI 2021 race-free eGFR derived from stored creatinine. None when
+        creatinine is missing or sex/age can't be resolved from the parent."""
+        if self.serum_creatinine_mg_dl is None:
+            return None
+        subject = self.recipient_visit.recipient if self.recipient_visit_id else self.donor
+        if subject is None:
+            return None
+        age = _age_at(subject, self.drawn_date)
+        if age is None or not subject.sex:
+            return None
+        is_female = subject.sex == "F"
+        kappa = 0.7 if is_female else 0.9
+        alpha = -0.241 if is_female else -0.302
+        ratio = float(self.serum_creatinine_mg_dl) / kappa
+        return (
+            142
+            * (min(ratio, 1.0) ** alpha)
+            * (max(ratio, 1.0) ** -1.200)
+            * (0.9938 ** age)
+            * (1.012 if is_female else 1.0)
+        )
+
     def clean(self):
-        has_visit = self.recipient_visit_id is not None
-        has_donor = self.donor_id is not None
-        if has_visit == has_donor:
-            raise ValidationError(
-                "A CMVQuantitative must attach to exactly one of recipient_visit or donor "
-                "(not both, not neither)."
-            )
-        if self.result_status == "reported" and self.value is None:
-            raise ValidationError("A reported result must carry a value.")
-        if self.result_status == "missing" and self.value is not None:
-            raise ValidationError("A missing observation must not carry a value.")
+        super().clean()
+        self._validate_value_matches_status(self.serum_creatinine_mg_dl)
+
+
+class DrugLevel(ExactlyOneParentMixin):
+    """One immunosuppressant trough result, stored LONG — one row per result so a
+    patient's repeating troughs form an ordered series (Meta.ordering by drawn_date).
+    Standalone: no FK to any prescription/medication model (slice 08 is OUT) so the
+    real drug-exposure variable is analyzable on its own grain.
+
+    Attaches to EXACTLY ONE parent (recipient visit XOR donor), enforced twice."""
+
+    recipient_visit = models.ForeignKey(
+        RecipientVisit,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="drug_levels",
+    )
+    donor = models.ForeignKey(
+        Donor,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="drug_levels",
+    )
+    analyte = models.CharField(max_length=16, choices=DRUG_ANALYTE_CHOICES)
+    value = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Trough concentration, ng/mL. Null only when result_status='missing'.",
+    )
+    result_status = _result_status_field()
+    drawn_date = models.DateField()
+    history = HistoricalRecords()
+
+    class Meta:
+        # Chronological so a patient's troughs read as an ordered series.
+        ordering = ["drawn_date", "pk"]
+        constraints = [
+            models.CheckConstraint(
+                name="druglevel_exactly_one_parent",
+                condition=(
+                    models.Q(recipient_visit__isnull=False, donor__isnull=True)
+                    | models.Q(recipient_visit__isnull=True, donor__isnull=False)
+                ),
+            ),
+            _status_matches_value_constraint("druglevel_value_matches_result_status"),
+        ]
+
+    def clean(self):
+        super().clean()
+        self._validate_value_matches_status(self.value)
 
 
 class OtherCondition(models.Model):
