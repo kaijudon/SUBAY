@@ -59,6 +59,13 @@ RECIPIENT_COLUMNS = [
     ("completion_status", "c"),
     ("sequencing_included", "c"),
     ("pre_kt_igg_serostatus", "c"),  # materialized derived value (Slice 05)
+    # Subject-level CMV-episode variables, materialized from cmv_episode_summary
+    # (Slice 07). Blank when the recipient has no reported QNAT series.
+    ("any_episode_le_6mo", "c"),
+    ("time_to_first_episode", "i"),
+    ("time_to_first_episode_censored", "c"),
+    ("episode_count", "i"),
+    ("person_time_days", "i"),
 ]
 DONOR_COLUMNS = [
     ("subject_id", "c"),
@@ -147,6 +154,16 @@ DRUGLEVEL_COLUMNS = [
     ("result_status", "c"),
     ("day_offset", "i"),
 ]
+# Derived CMV episodes: one row per episode (Slice 07). Boundaries are already
+# day-offsets from the deriver — no calendar date can reach this file. Donor QNAT
+# has no kt anchor and so produces no episode rows.
+EPISODE_COLUMNS = [
+    ("recipient", "c"),
+    ("episode_index", "i"),
+    ("start_day_offset", "i"),
+    ("end_day_offset", "i"),  # blank for an open / right-censored episode
+    ("severity_tier", "c"),
+]
 
 
 def _offset(d, kt_date):
@@ -189,6 +206,7 @@ class Command(BaseCommand):
             self._write_renal(staging)
             self._write_druglevels(staging)
             self._write_other_conditions(staging)
+            self._write_episodes(staging)
             self._write_manifest(staging, version)
             self._assert_no_identifier_leak(staging)
         except Exception:
@@ -203,6 +221,7 @@ class Command(BaseCommand):
             w = csv.writer(fh)
             w.writerow([name for name, _ in RECIPIENT_COLUMNS])
             for r in Recipient.objects.order_by("pk"):
+                s = r.cmv_episode_summary  # None when no reported QNAT series
                 w.writerow(
                     [r.subject_id, r.sex, r.age, r.risk_stratum,
                      r.donor_serostatus or "", r.recipient_serostatus or "",
@@ -213,7 +232,12 @@ class Command(BaseCommand):
                      r.donor_id or "",
                      r.completion_status,
                      _bool3(r.sequencing_included),
-                     r.pre_kt_igg_serostatus or ""]
+                     r.pre_kt_igg_serostatus or "",
+                     _bool3(s.any_episode_le_6mo) if s else "",
+                     s.time_to_first_episode if s else "",
+                     _bool3(s.time_to_first_censored) if s else "",
+                     s.episode_count if s else "",
+                     s.person_time if s else ""]
                 )
 
     def _write_donors(self, base):
@@ -355,6 +379,18 @@ class Command(BaseCommand):
                 w.writerow([d.id, parent_type, parent_id, d.analyte, value_cell,
                             d.result_status, offset])
 
+    def _write_episodes(self, base):
+        with (base / "cmvepisode.csv").open("w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow([name for name, _ in EPISODE_COLUMNS])
+            for r in Recipient.objects.order_by("pk"):
+                # Episodes are derived (Topic #4 rules) entirely in day-offset
+                # space, so no calendar date can reach this file.
+                for e in r.cmv_episodes:
+                    end_cell = e.end_day if e.end_day is not None else ""
+                    w.writerow([r.subject_id, e.episode_index, e.start_day,
+                                end_cell, e.severity_tier])
+
     def _write_manifest(self, base, version):
         specs = {
             "recipient.csv": RECIPIENT_COLUMNS,
@@ -367,6 +403,7 @@ class Command(BaseCommand):
             "renalfunction.csv": RENAL_COLUMNS,
             "druglevel.csv": DRUGLEVEL_COLUMNS,
             "othercondition.csv": OTHERCONDITION_COLUMNS,
+            "cmvepisode.csv": EPISODE_COLUMNS,
         }
         files = {}
         for name, columns in specs.items():
