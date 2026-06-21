@@ -71,7 +71,9 @@ class RecipientAdmin(SimpleHistoryAdmin):
         "completion_status", "sequencing_included",
     )
     # derived values are read-only — computed, never editable
-    readonly_fields = ("age", "risk_stratum", "has_donor_serostatus_mismatch")
+    readonly_fields = (
+        "age", "risk_stratum", "has_donor_serostatus_mismatch", "cmv_episode_summary",
+    )
     inlines = [RecipientVisitInline, OtherConditionInline]
 
 
@@ -124,7 +126,8 @@ class CMVSerologyAdmin(SimpleHistoryAdmin):
 @admin.register(CMVQuantitative)
 class CMVQuantitativeAdmin(SimpleHistoryAdmin):
     list_display = (
-        "id", "recipient_visit", "donor", "value", "result_status", "drawn_date",
+        "id", "recipient_visit", "donor", "value", "severity_tier", "result_status",
+        "drawn_date",
     )
 
 

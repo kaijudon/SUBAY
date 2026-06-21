@@ -75,6 +75,7 @@ def test_export_produces_one_csv_per_model_with_keys_intact(seeded, tmp_path):
         "tbnkpanel.csv",
         "renalfunction.csv",
         "druglevel.csv",
+        "cmvepisode.csv",
         "manifest.json",
     }
 
@@ -614,6 +615,127 @@ def test_export_refuses_on_leaky_slice06_column(db, tmp_path):
     d = DrugLevel(recipient_visit=v, value=Decimal("8.0"), drawn_date=date(2025, 1, 8))
     d.analyte = "Maria Santos"  # name-shaped leak into an exported column
     d.save()  # bypass clean() to stage a leak
+    with pytest.raises(CommandError):
+        call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    assert not (tmp_path / "v0.1").exists()
+
+
+# --- Slice 07: derived CMV episodes + subject-level vars flow through the export ---
+
+
+@pytest.fixture
+def seeded_slice07(db):
+    """A recipient whose reported QNAT series forms a resolved episode and an open
+    (trailing) episode, plus a donor QNAT (no kt anchor -> never an episode). The
+    full Slice 07 export surface for the leak scan."""
+    d = Donor.objects.create(subject_id="DCMVD01", date_of_birth=date(1975, 1, 1), sex="F")
+    CMVQuantitative.objects.create(donor=d, value=Decimal("1500"), drawn_date=date(2024, 12, 1))
+    r = Recipient.objects.create(
+        subject_id="SCMVR07", date_of_birth=date(1980, 1, 1), sex="M", kt_date=date(2025, 1, 1)
+    )
+    v = RecipientVisit.objects.create(
+        recipient=r, timepoint_label="day_7", actual_visit_date=date(2025, 1, 8)
+    )
+    CMVQuantitative.objects.create(  # day 0 -> opens episode 1
+        recipient_visit=v, value=Decimal("1500"), drawn_date=date(2025, 1, 1),
+        severity_tier="disease",
+    )
+    CMVQuantitative.objects.create(  # day 30 -> closes episode 1
+        recipient_visit=v, value=Decimal("10"), drawn_date=date(2025, 1, 31)
+    )
+    CMVQuantitative.objects.create(  # day 200 -> opens episode 2 (open, no end)
+        recipient_visit=v, value=Decimal("1500"), drawn_date=date(2025, 7, 20)
+    )
+    return r
+
+
+def test_export_writes_episode_file_one_row_per_episode(seeded_slice07, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+
+    with (out / "cmvepisode.csv").open(newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    assert len(rows) == 2  # donor QNAT contributes no episode row
+    assert all(r["recipient"] == "SCMVR07" for r in rows)
+    ep1 = rows[0]
+    assert ep1["episode_index"] == "1"
+    assert ep1["start_day_offset"] == "0"
+    assert ep1["end_day_offset"] == "30"
+    assert ep1["severity_tier"] == "disease"  # max tier among members
+
+
+def test_export_open_episode_has_blank_end_offset(seeded_slice07, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    with (out / "cmvepisode.csv").open(newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    ep2 = rows[1]
+    assert ep2["episode_index"] == "2"
+    assert ep2["start_day_offset"] == "200"
+    assert ep2["end_day_offset"] == ""  # open/right-censored -> blank, never a date
+
+
+def test_export_recipient_has_subject_level_episode_columns(seeded_slice07, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    with (out / "recipient.csv").open(newline="") as fh:
+        row = list(csv.DictReader(fh))[0]
+    assert row["episode_count"] == "2"
+    assert row["any_episode_le_6mo"] == "true"  # first episode starts day 0 <= 180
+    assert row["time_to_first_episode"] == "0"
+    assert row["time_to_first_episode_censored"] == "false"
+    assert row["person_time_days"] == "200"  # observed span day 0..200
+
+
+def test_export_recipient_episode_columns_blank_without_qnat(db, tmp_path):
+    Recipient.objects.create(
+        subject_id="SCMVR07", date_of_birth=date(1980, 1, 1), sex="M", kt_date=date(2025, 1, 1)
+    )
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    with (out / "recipient.csv").open(newline="") as fh:
+        row = list(csv.DictReader(fh))[0]
+    for col in ("episode_count", "any_episode_le_6mo", "time_to_first_episode",
+                "time_to_first_episode_censored", "person_time_days"):
+        assert row[col] == ""  # no reported QNAT -> no summary to materialize
+
+
+def test_export_manifest_lists_episode_file(seeded_slice07, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    manifest = json.loads((out / "manifest.json").read_text())
+    assert "cmvepisode.csv" in manifest["files"]
+    assert manifest["files"]["cmvepisode.csv"]["columns"]["recipient"] == "c"
+
+
+def test_export_slice07_leak_scan_over_episode_file_and_columns(seeded_slice07, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    for f in out.glob("*.csv"):
+        text = f.read_text()
+        assert "2025-01-01" not in text  # kt_date / drawn_date never a calendar date
+        assert "2025-01-31" not in text  # episode-end drawn_date -> only a day-offset
+        assert "2025-07-20" not in text  # open-episode drawn_date
+        assert "1980-01-01" not in text  # dob
+
+
+def test_export_refuses_on_leaky_severity_tier(db, tmp_path):
+    """A name-shaped value placed in severity_tier (bypassing clean()) surfaces in
+    cmvepisode.csv and must trigger refusal with nothing written."""
+    r = Recipient.objects.create(
+        subject_id="SCMVR07", date_of_birth=date(1980, 1, 1), sex="M", kt_date=date(2025, 1, 1)
+    )
+    v = RecipientVisit.objects.create(
+        recipient=r, timepoint_label="day_7", actual_visit_date=date(2025, 1, 8)
+    )
+    q = CMVQuantitative(  # single-member episode -> tier passes through verbatim
+        recipient_visit=v, value=Decimal("1500"), drawn_date=date(2025, 1, 1)
+    )
+    q.severity_tier = "Maria Santos"  # name-shaped leak into an exported column
+    q.save()  # bypass clean() to stage a leak
+    CMVQuantitative.objects.create(
+        recipient_visit=v, value=Decimal("10"), drawn_date=date(2025, 1, 31)
+    )
     with pytest.raises(CommandError):
         call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
     assert not (tmp_path / "v0.1").exists()

@@ -82,3 +82,16 @@ def test_tbnk_admin_has_ratio_readonly():
 def test_renal_admin_has_egfr_readonly():
     ma = admin.site._registry[RenalFunction]
     assert "eGFR" in ma.readonly_fields
+
+
+# --- Slice 07: episode derivation surfaced in admin ---
+
+
+def test_quantitative_admin_shows_severity_tier():
+    ma = admin.site._registry[CMVQuantitative]
+    assert "severity_tier" in ma.list_display
+
+
+def test_recipient_admin_has_episode_summary_readonly():
+    ma = admin.site._registry[Recipient]
+    assert "cmv_episode_summary" in ma.readonly_fields

@@ -3,7 +3,14 @@ from decimal import Decimal
 
 import pytest
 
-from renova.registry.models import CMVSerology, Recipient, RecipientVisit
+from renova.registry.episodes import Episode
+from renova.registry.models import (
+    CMVQuantitative,
+    CMVSerology,
+    Donor,
+    Recipient,
+    RecipientVisit,
+)
 
 
 @pytest.mark.django_db
@@ -107,3 +114,112 @@ def test_pre_kt_igg_serostatus_equals_the_igg_derivation_one_canonical_value():
     )
     derived = "POS" if s.is_positive else "NEG"
     assert r.pre_kt_igg_serostatus == derived
+
+
+# --- Slice 07: CMV episodes derived from the reported QNAT series (ORM surface) ---
+
+POS = Decimal("1500")
+NEG = Decimal("10")
+
+
+def _qnat(visit, value, drawn_date, **kw):
+    return CMVQuantitative.objects.create(
+        recipient_visit=visit, value=value, drawn_date=drawn_date, **kw
+    )
+
+
+@pytest.mark.django_db
+def test_cmv_episodes_is_a_property_not_stored():
+    """Episodes are computed at read, never a stored field (derive-don't-store)."""
+    field_names = {f.name for f in Recipient._meta.get_fields()}
+    assert "cmv_episodes" not in field_names
+    assert isinstance(Recipient.cmv_episodes, property)
+
+
+@pytest.mark.django_db
+def test_cmv_episodes_built_from_reported_qnat_across_visits():
+    r = _recipient(None)
+    v1 = RecipientVisit.objects.create(
+        recipient=r, timepoint_label="day_7", actual_visit_date=date(2025, 1, 8)
+    )
+    v2 = RecipientVisit.objects.create(
+        recipient=r, timepoint_label="day_180", actual_visit_date=date(2025, 7, 20)
+    )
+    _qnat(v1, POS, date(2025, 1, 1))   # day 0  -> opens episode 1
+    _qnat(v1, NEG, date(2025, 1, 11))  # day 10 -> closes episode 1
+    _qnat(v2, POS, date(2025, 7, 20))  # day 200 -> opens episode 2 (open, end None)
+
+    assert r.cmv_episodes == [
+        Episode(1, 0, 10, "asymptomatic"),
+        Episode(2, 200, None, "asymptomatic"),
+    ]
+
+
+@pytest.mark.django_db
+def test_cmv_episodes_excludes_missing_observations():
+    """D-B: a mid-episode QC failure (result_status='missing') is NOT clearance, so
+    it never spuriously ends an open episode."""
+    r = _recipient(None)
+    v = RecipientVisit.objects.create(
+        recipient=r, timepoint_label="day_7", actual_visit_date=date(2025, 1, 8)
+    )
+    _qnat(v, POS, date(2025, 1, 1))                       # day 0  open
+    _qnat(v, None, date(2025, 1, 6), result_status="missing")  # day 5  ignored
+    _qnat(v, POS, date(2025, 1, 11))                     # day 10 still open
+    _qnat(v, NEG, date(2025, 1, 21))                     # day 20 close
+
+    assert r.cmv_episodes == [Episode(1, 0, 20, "asymptomatic")]
+
+
+@pytest.mark.django_db
+def test_cmv_episodes_excludes_donor_attached_qnat():
+    """Donor QNAT has no kt anchor -> never an episode in the recipient series."""
+    d = Donor.objects.create(
+        subject_id="DCMVD07", date_of_birth=date(1975, 1, 1), sex="F"
+    )
+    CMVQuantitative.objects.create(donor=d, value=POS, drawn_date=date(2024, 12, 1))
+    r = _recipient(None)
+    v = RecipientVisit.objects.create(
+        recipient=r, timepoint_label="day_7", actual_visit_date=date(2025, 1, 8)
+    )
+    _qnat(v, NEG, date(2025, 1, 1))  # recipient never crosses LoD
+
+    assert r.cmv_episodes == []
+
+
+@pytest.mark.django_db
+def test_cmv_episode_tier_is_max_among_members():
+    r = _recipient(None)
+    v = RecipientVisit.objects.create(
+        recipient=r, timepoint_label="day_7", actual_visit_date=date(2025, 1, 8)
+    )
+    _qnat(v, POS, date(2025, 1, 1), severity_tier="asymptomatic")
+    _qnat(v, POS, date(2025, 1, 11), severity_tier="disease")
+    _qnat(v, NEG, date(2025, 1, 21))
+
+    assert r.cmv_episodes[0].severity_tier == "disease"
+
+
+@pytest.mark.django_db
+def test_cmv_episode_summary_matches_pure_result():
+    from renova.registry.episodes import summarize_episodes
+
+    r = _recipient(None)
+    v = RecipientVisit.objects.create(
+        recipient=r, timepoint_label="day_7", actual_visit_date=date(2025, 1, 8)
+    )
+    _qnat(v, POS, date(2025, 1, 1))   # day 0
+    _qnat(v, NEG, date(2025, 1, 31))  # day 30
+
+    expected = summarize_episodes(
+        r.cmv_episodes, observation_start_day=0, observation_end_day=30
+    )
+    assert r.cmv_episode_summary == expected
+    assert r.cmv_episode_summary.episode_count == 1
+    assert r.cmv_episode_summary.person_time == 30
+
+
+@pytest.mark.django_db
+def test_cmv_episode_summary_none_without_reported_qnat():
+    r = _recipient(None)
+    assert r.cmv_episode_summary is None

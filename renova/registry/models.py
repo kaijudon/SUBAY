@@ -12,6 +12,12 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from simple_history.models import HistoricalRecords
 
+from .episodes import (
+    SEVERITY_TIERS,
+    EpisodePoint,
+    derive_episodes,
+    summarize_episodes,
+)
 from .scheduling import TIMEPOINT_OFFSETS, ClosureDayLike, first_operating_day
 from .validators import subject_id_validator
 
@@ -71,6 +77,9 @@ def _status_matches_value_constraint(name, value_field="value", status_field="re
 
 
 DRUG_ANALYTE_CHOICES = [("tacrolimus", "Tacrolimus"), ("everolimus", "Everolimus")]
+# Clinical Kotton-2018 severity, sourced from the pure deriver so the stored
+# choices can never drift from the tiers the episode logic ranks.
+SEVERITY_TIER_CHOICES = [(t, t.capitalize()) for t in SEVERITY_TIERS]
 VISIT_SHIFT_CAP_DAYS = 3
 
 
@@ -202,6 +211,34 @@ class Recipient(BaseSubject):
         if not self.donor_serostatus or not donor_status:
             return False
         return self.donor_serostatus != donor_status
+
+    def _reported_qnat_points(self):
+        """Ordered EpisodePoints from this recipient's REPORTED viral-load draws,
+        in day-offset space (drawn_date - kt_date). Donor-attached QNAT (no kt
+        anchor) and missing observations (a QC failure is not clearance) are
+        excluded, so a calendar date never reaches the deriver."""
+        qs = CMVQuantitative.objects.filter(
+            recipient_visit__recipient=self, result_status="reported"
+        ).order_by("drawn_date", "pk")
+        return [
+            EpisodePoint((q.drawn_date - self.kt_date).days, q.value, q.severity_tier)
+            for q in qs
+        ]
+
+    @property
+    def cmv_episodes(self):
+        """Derived CMV episodes (Topic #4 rules). Computed at read, never stored."""
+        return derive_episodes(self._reported_qnat_points())
+
+    @property
+    def cmv_episode_summary(self):
+        """Subject-level episode variables for the SAP, or None when the recipient
+        has no reported QNAT series to anchor person-time/censoring."""
+        points = self._reported_qnat_points()
+        if not points:
+            return None
+        days = [p.day for p in points]
+        return summarize_episodes(self.cmv_episodes, min(days), max(days))
 
 
 class Donor(BaseSubject):
@@ -492,6 +529,13 @@ class CMVQuantitative(ExactlyOneParentMixin):
         default="reported",
         help_text="reported = a value was obtained; missing = QC/lab failure (no value). "
         "A missing observation never changes the recipient's completion_status.",
+    )
+    severity_tier = models.CharField(
+        max_length=12,
+        choices=SEVERITY_TIER_CHOICES,
+        default="asymptomatic",
+        help_text="Clinical Kotton-2018 tier (asymptomatic/syndrome/disease) for this draw. "
+        "Symptom-based, NOT value-derived; an episode's tier = the max among its members.",
     )
     drawn_date = models.DateField()
     history = HistoricalRecords()

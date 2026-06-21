@@ -146,3 +146,28 @@ def test_history_tracked(visit):
         recipient_visit=visit, value=Decimal("500"), drawn_date=date(2025, 1, 15)
     )
     assert q.history.count() == 1
+
+
+# --- Slice 07: per-result clinical severity_tier (Kotton 2018) ---
+
+
+def test_severity_tier_defaults_to_asymptomatic(visit):
+    q = CMVQuantitative.objects.create(
+        recipient_visit=visit, value=Decimal("500"), drawn_date=date(2025, 1, 15)
+    )
+    assert q.severity_tier == "asymptomatic"
+
+
+def test_severity_tier_choices_are_the_three_kotton_tiers():
+    field = CMVQuantitative._meta.get_field("severity_tier")
+    assert [c[0] for c in field.choices] == ["asymptomatic", "syndrome", "disease"]
+
+
+def test_severity_tier_round_trips(visit):
+    q = CMVQuantitative(
+        recipient_visit=visit, value=Decimal("9000"), drawn_date=date(2025, 1, 15),
+        severity_tier="disease",
+    )
+    q.full_clean()
+    q.save()
+    assert CMVQuantitative.objects.get(pk=q.pk).severity_tier == "disease"
