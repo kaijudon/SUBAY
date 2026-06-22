@@ -9,10 +9,10 @@ RUN apt-get update && apt-get install -y \
 
 # TODO: install your issue tracker's CLI here. See .sandcastle/SETUP_ISSUE_TRACKER.md
 
-# Install project Python dependencies (Django, pytest, mypy, ...) so the agent
-# can run manage.py, the test suite, and typechecks inside the sandbox.
-COPY requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt
+# NOTE: project Python deps (Django, pytest, mypy, ...) are NOT installed here.
+# sandcastle's build context is .sandcastle/, so the repo-root requirements.txt
+# is not reachable at build time. They are installed at runtime instead by the
+# onSandboxReady hook in main.mts, where the repo is bind-mounted at the workspace.
 
 # Build-args for UID/GID alignment: sandcastle docker build-image
 # defaults these to the host user's UID/GID so image-built files
