@@ -31,6 +31,7 @@ Work test-first (red → green):
    category — never massage output to get past the gate.
 
 Commit your work with a single commit prefixed `Slice {{SLICE}}:` naming the card.
+Do NOT add a `Co-Authored-By:` trailer to the commit message.
 
 When the suite is green, migrations are clean, the backpressure collector exits 0,
 and the change is committed, output `<promise>BUILD_DONE</promise>`.
