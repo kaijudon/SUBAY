@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Sequential RENOVA slice driver — replaces the old Ralph loop.
-# Runs each remaining slice prompt through sandcastle, one at a time, on the
-# merged result of the previous slice. Stops on the first failing slice.
+# Runs each remaining slice through the multi-agent pipeline
+# (.sandcastle/main-pipeline.mts: Planner -> Builder <-> Reviewer), one at a time.
+# The pipeline commits on agent/slice-NN and, on approval, merges into the
+# mainline itself — so this loop does NOT merge. It just stops on the first
+# slice that fails (nonzero exit).
 #
 # Usage:
 #   .sandcastle/run-slices.sh            # run the default slice list
@@ -18,31 +21,18 @@ else
   SLICES=(09 10 11 12 13 14)
 fi
 
-base="$(git branch --show-current)"
-
 for n in "${SLICES[@]}"; do
-  prompt=".sandcastle/prompt-${n}.md"
-  branch="agent/slice-${n}"
-  if [ ! -f "$prompt" ]; then
-    echo "ERROR: $prompt not found" >&2
-    exit 1
-  fi
   echo "========================================"
-  echo "=== RENOVA Slice ${n}  ->  ${prompt}"
+  echo "=== RENOVA Slice ${n} (Planner -> Builder <-> Reviewer)"
   echo "========================================"
-  # main.mts puts commits on agent/slice-NN and exits nonzero if the slice ran
-  # without emitting the completion signal. The `if` lets us print a clear
-  # message before `exit` (set -e would otherwise abort silently). On failure we
-  # stop and leave the branch unmerged for review.
-  if ! npx tsx .sandcastle/main.mts "$prompt"; then
-    echo "ABORT: Slice ${n} did not complete. Commits left on ${branch} (unmerged)." >&2
+  # main-pipeline.mts exits nonzero if any stage blocks or no approval is reached.
+  # The `if` lets us print a clear message before `exit` (set -e would otherwise
+  # abort silently). On success the pipeline already merged agent/slice-${n}.
+  if ! npx tsx .sandcastle/main-pipeline.mts "$n"; then
+    echo "ABORT: Slice ${n} did not complete. Commits left on agent/slice-${n} (unmerged)." >&2
     echo "Inspect the work, then resume from this slice: $0 ${n} ..." >&2
     exit 1
   fi
-  # Slice succeeded — merge its branch into the mainline so the next slice builds
-  # on it. A merge conflict trips set -e and aborts, leaving the branch intact.
-  echo "Merging ${branch} into ${base}..."
-  git merge --no-ff -m "Merge ${branch}" "${branch}"
 done
 
 echo "All requested slices complete."
