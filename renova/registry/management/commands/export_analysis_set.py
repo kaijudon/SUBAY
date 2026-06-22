@@ -33,6 +33,7 @@ from renova.registry.models import (
     MedicationCourse,
     RejectionEpisode,
     Hospitalization,
+    Aliquot,
 )
 
 # A bare calendar date should never appear in any output file.
@@ -216,6 +217,23 @@ HOSPITALIZATION_COLUMNS = [
 ]
 
 
+# Biobank ledger (Slice 09). The straw's collection date becomes a day-offset from
+# the recipient's kt_date (blank when the aliquot has no visit anchor — the
+# donor/DonorVisit precedent). remaining_ul and thaw_count are materialized from
+# the derived @property (summed from the append-only event log), never stored
+# columns. The free-text destruction_certificate is NOT exported (leak vector,
+# mirroring Hospitalization.reason); thaw/consumption/transfer dates never leave.
+ALIQUOT_COLUMNS = [
+    ("id", "i"),
+    ("recipient", "c"),
+    ("matrix", "c"),
+    ("collected_day_offset", "i"),
+    ("initial_volume_ul", "d"),
+    ("remaining_ul", "d"),  # derived, materialized
+    ("thaw_count", "i"),  # derived, materialized
+]
+
+
 def _offset(d, kt_date):
     """Integer days from transplant (day 0). Negative for pre-KT dates."""
     return (d - kt_date).days
@@ -260,6 +278,7 @@ class Command(BaseCommand):
             self._write_medicationcourses(staging)
             self._write_rejectionepisodes(staging)
             self._write_hospitalizations(staging)
+            self._write_aliquots(staging)
             self._write_manifest(staging, version)
             self._assert_no_identifier_leak(staging)
         except Exception:
@@ -504,6 +523,28 @@ class Command(BaseCommand):
                     _bool3(h.cmv_attributable),
                 ])
 
+    def _write_aliquots(self, base):
+        with (base / "aliquot.csv").open("w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow([name for name, _ in ALIQUOT_COLUMNS])
+            qs = Aliquot.objects.select_related(
+                "recipient_visit__recipient"
+            ).order_by("pk")
+            for a in qs:
+                # No visit anchor -> no kt_date -> collected date stays blank, never
+                # a calendar date (the donor/DonorVisit precedent). destruction
+                # certificate (free text) is deliberately not exported.
+                if a.recipient_visit_id is not None:
+                    recipient = a.recipient_visit.recipient
+                    recipient_cell = recipient.subject_id
+                    offset = _offset(a.collected_date, recipient.kt_date)
+                else:
+                    recipient_cell, offset = "", ""
+                w.writerow([
+                    a.id, recipient_cell, a.matrix, offset,
+                    str(a.initial_volume_ul), str(a.remaining_ul), a.thaw_count,
+                ])
+
     def _write_manifest(self, base, version):
         specs = {
             "recipient.csv": RECIPIENT_COLUMNS,
@@ -520,6 +561,7 @@ class Command(BaseCommand):
             "medicationcourse.csv": MEDICATIONCOURSE_COLUMNS,
             "rejectionepisode.csv": REJECTIONEPISODE_COLUMNS,
             "hospitalization.csv": HOSPITALIZATION_COLUMNS,
+            "aliquot.csv": ALIQUOT_COLUMNS,
         }
         files = {}
         for name, columns in specs.items():
