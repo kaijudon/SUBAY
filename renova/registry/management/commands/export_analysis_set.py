@@ -30,6 +30,9 @@ from renova.registry.models import (
     TBNKPanel,
     RenalFunction,
     DrugLevel,
+    MedicationCourse,
+    RejectionEpisode,
+    Hospitalization,
 )
 
 # A bare calendar date should never appear in any output file.
@@ -166,6 +169,53 @@ EPISODE_COLUMNS = [
 ]
 
 
+# Recipient-level clinical events (Slice 08). All dates become day-offsets from
+# the recipient's kt_date; LOS/duration are integer day-counts (not dates).
+# reason (free text) is deliberately NOT exported (leak vector, mirrors
+# RecipientVisit.stretch_reference). disposition (enum) carries the signal.
+MEDICATIONCOURSE_COLUMNS = [
+    ("id", "i"),
+    ("recipient", "c"),
+    ("drug_class", "c"),
+    ("agent", "c"),
+    ("dose_amount", "d"),
+    ("dose_unit", "c"),
+    ("frequency", "c"),
+    ("course_type", "c"),
+    ("start_day_offset", "i"),
+    ("end_day_offset", "i"),
+    ("duration_days", "i"),  # derived day-count, never a date
+    ("completed_per_protocol", "c"),
+    ("early_discontinuation_reason", "c"),
+    ("dose_reduction_count", "i"),
+    ("dose_reduction_reason", "c"),
+    ("change_direction", "c"),
+    ("cmv_management_intent", "c"),
+]
+REJECTIONEPISODE_COLUMNS = [
+    ("id", "i"),
+    ("recipient", "c"),
+    ("onset_day_offset", "i"),
+    ("rejection_type", "c"),
+    ("banff_grade", "c"),
+    ("biopsy_proven", "c"),
+    ("biopsy_day_offset", "i"),
+    ("treatment", "c"),
+    ("resolved_day_offset", "i"),
+]
+HOSPITALIZATION_COLUMNS = [
+    ("id", "i"),
+    ("recipient", "c"),
+    ("admit_day_offset", "i"),
+    ("discharge_day_offset", "i"),
+    ("length_of_stay_days", "i"),  # derived day-count, never a date
+    ("disposition", "c"),
+    ("cmv_attribution", "c"),  # reviewer-set FK id, or blank
+    ("rejection_attribution", "c"),  # reviewer-set FK id, or blank
+    ("cmv_attributable", "c"),  # honest-denominator flag (bool3)
+]
+
+
 def _offset(d, kt_date):
     """Integer days from transplant (day 0). Negative for pre-KT dates."""
     return (d - kt_date).days
@@ -207,6 +257,9 @@ class Command(BaseCommand):
             self._write_druglevels(staging)
             self._write_other_conditions(staging)
             self._write_episodes(staging)
+            self._write_medicationcourses(staging)
+            self._write_rejectionepisodes(staging)
+            self._write_hospitalizations(staging)
             self._write_manifest(staging, version)
             self._assert_no_identifier_leak(staging)
         except Exception:
@@ -215,6 +268,19 @@ class Command(BaseCommand):
 
         staging.rename(base)
         self.stdout.write(self.style.SUCCESS(f"Wrote de-identified snapshot to {base}"))
+
+    @staticmethod
+    def _episode_summary_row(s):
+        # Subject-level CMV-episode columns; blank when no QNAT series (s is None).
+        if s is None:
+            return ["", "", "", "", ""]
+        return [
+            _bool3(s.any_episode_le_6mo),
+            s.time_to_first_episode,
+            _bool3(s.time_to_first_censored),
+            s.episode_count,
+            s.person_time,
+        ]
 
     def _write_recipients(self, base):
         with (base / "recipient.csv").open("w", newline="") as fh:
@@ -232,12 +298,8 @@ class Command(BaseCommand):
                      r.donor_id or "",
                      r.completion_status,
                      _bool3(r.sequencing_included),
-                     r.pre_kt_igg_serostatus or "",
-                     _bool3(s.any_episode_le_6mo) if s else "",
-                     s.time_to_first_episode if s else "",
-                     _bool3(s.time_to_first_censored) if s else "",
-                     s.episode_count if s else "",
-                     s.person_time if s else ""]
+                     r.pre_kt_igg_serostatus or ""]
+                    + self._episode_summary_row(s)
                 )
 
     def _write_donors(self, base):
@@ -391,6 +453,57 @@ class Command(BaseCommand):
                     w.writerow([r.subject_id, e.episode_index, e.start_day,
                                 end_cell, e.severity_tier])
 
+    def _write_medicationcourses(self, base):
+        with (base / "medicationcourse.csv").open("w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow([name for name, _ in MEDICATIONCOURSE_COLUMNS])
+            qs = MedicationCourse.objects.select_related("recipient").order_by("pk")
+            for c in qs:
+                kt = c.recipient.kt_date
+                end_off = _offset(c.end_date, kt) if c.end_date is not None else ""
+                dur = c.duration_days if c.duration_days is not None else ""
+                w.writerow([
+                    c.id, c.recipient.subject_id, c.drug_class, c.agent,
+                    str(c.dose_amount), c.dose_unit, c.frequency, c.course_type,
+                    _offset(c.start_date, kt), end_off, dur,
+                    _bool3(c.completed_per_protocol), c.early_discontinuation_reason,
+                    c.dose_reduction_count if c.dose_reduction_count is not None else "",
+                    c.dose_reduction_reason, c.change_direction,
+                    _bool3(c.cmv_management_intent),
+                ])
+
+    def _write_rejectionepisodes(self, base):
+        with (base / "rejectionepisode.csv").open("w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow([name for name, _ in REJECTIONEPISODE_COLUMNS])
+            qs = RejectionEpisode.objects.select_related("recipient").order_by("pk")
+            for e in qs:
+                kt = e.recipient.kt_date
+                biopsy_off = _offset(e.biopsy_date, kt) if e.biopsy_date is not None else ""
+                resolved_off = _offset(e.resolved_date, kt) if e.resolved_date is not None else ""
+                w.writerow([
+                    e.id, e.recipient.subject_id, _offset(e.onset_date, kt),
+                    e.rejection_type, e.banff_grade, _bool3(e.biopsy_proven),
+                    biopsy_off, e.treatment, resolved_off,
+                ])
+
+    def _write_hospitalizations(self, base):
+        with (base / "hospitalization.csv").open("w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow([name for name, _ in HOSPITALIZATION_COLUMNS])
+            qs = Hospitalization.objects.select_related("recipient").order_by("pk")
+            for h in qs:
+                kt = h.recipient.kt_date
+                discharge_off = _offset(h.discharge_date, kt) if h.discharge_date is not None else ""
+                los = h.length_of_stay_days if h.length_of_stay_days is not None else ""
+                w.writerow([
+                    h.id, h.recipient.subject_id, _offset(h.admit_date, kt),
+                    discharge_off, los, h.disposition,
+                    h.cmv_attribution_id if h.cmv_attribution_id is not None else "",
+                    h.rejection_attribution_id if h.rejection_attribution_id is not None else "",
+                    _bool3(h.cmv_attributable),
+                ])
+
     def _write_manifest(self, base, version):
         specs = {
             "recipient.csv": RECIPIENT_COLUMNS,
@@ -404,6 +517,9 @@ class Command(BaseCommand):
             "druglevel.csv": DRUGLEVEL_COLUMNS,
             "othercondition.csv": OTHERCONDITION_COLUMNS,
             "cmvepisode.csv": EPISODE_COLUMNS,
+            "medicationcourse.csv": MEDICATIONCOURSE_COLUMNS,
+            "rejectionepisode.csv": REJECTIONEPISODE_COLUMNS,
+            "hospitalization.csv": HOSPITALIZATION_COLUMNS,
         }
         files = {}
         for name, columns in specs.items():

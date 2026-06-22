@@ -77,6 +77,30 @@ def _status_matches_value_constraint(name, value_field="value", status_field="re
 
 
 DRUG_ANALYTE_CHOICES = [("tacrolimus", "Tacrolimus"), ("everolimus", "Everolimus")]
+# Slice 08 clinical-event vocabularies. Structured (choices), never free text, so a
+# mandated prophylaxis can never masquerade as a clinical response at analysis.
+DRUG_CLASS_CHOICES = [("antiviral", "Antiviral"), ("immunosuppressant", "Immunosuppressant")]
+DOSE_UNIT_CHOICES = [("mg", "mg"), ("g", "g"), ("mg_kg", "mg/kg"), ("mg_m2", "mg/m²")]
+FREQUENCY_CHOICES = [
+    ("qd", "Once daily"), ("bid", "Twice daily"), ("tid", "Three times daily"),
+    ("qod", "Every other day"), ("weekly", "Weekly"),
+]
+COURSE_TYPE_CHOICES = [("prophylaxis", "Prophylaxis"), ("treatment", "Treatment")]
+IS_CHANGE_DIRECTION_CHOICES = [("reduction", "Reduction"), ("intensification", "Intensification")]
+EARLY_DISCONT_REASON_CHOICES = [
+    ("toxicity", "Toxicity"), ("intolerance", "Intolerance"),
+    ("cost", "Cost"), ("other", "Other"),
+]
+REJECTION_TYPE_CHOICES = [("tcmr", "TCMR"), ("amr", "AMR"), ("mixed", "Mixed")]
+BANFF_GRADE_CHOICES = [
+    ("borderline", "Borderline"),
+    ("ia", "IA"), ("ib", "IB"), ("iia", "IIA"), ("iib", "IIB"), ("iii", "III"),
+    ("amr_active", "Active AMR"), ("amr_chronic", "Chronic active AMR"),
+]
+DISPOSITION_CHOICES = [
+    ("discharged_home", "Discharged home"), ("transferred", "Transferred"),
+    ("died", "Died"), ("against_advice", "Against medical advice"),
+]
 # Clinical Kotton-2018 severity, sourced from the pure deriver so the stored
 # choices can never drift from the tiers the episode logic ranks.
 SEVERITY_TIER_CHOICES = [(t, t.capitalize()) for t in SEVERITY_TIERS]
@@ -764,3 +788,165 @@ class OtherCondition(models.Model):
 
     def __str__(self):
         return f"{self.recipient_id}: {self.condition}"
+
+
+class MedicationCourse(models.Model):
+    """One drug course on a recipient — structured numeric dose (dose_amount +
+    dose_unit + frequency, never free text) so a mandated prophylaxis can never
+    masquerade as a clinical response. course_type splits prophylaxis (all-40
+    ~2-month valganciclovir: completed-per-protocol flag, early-discontinuation
+    reason) from treatment escalation (CMV+ subset: agent, derived duration,
+    dose-reduction count + reason). IS changes carry a directional typology
+    (reduction vs intensification) with an optional CMV-management-intent tag so
+    bidirectionality is visible. duration_days is DERIVED (derive-don't-store)."""
+
+    recipient = models.ForeignKey(
+        Recipient, on_delete=models.CASCADE, related_name="medication_courses"
+    )
+    drug_class = models.CharField(max_length=18, choices=DRUG_CLASS_CHOICES)
+    agent = models.CharField(max_length=64, help_text="Drug name, e.g. valganciclovir, tacrolimus.")
+    dose_amount = models.DecimalField(max_digits=8, decimal_places=2)
+    dose_unit = models.CharField(max_length=6, choices=DOSE_UNIT_CHOICES)
+    frequency = models.CharField(max_length=8, choices=FREQUENCY_CHOICES)
+    course_type = models.CharField(max_length=12, choices=COURSE_TYPE_CHOICES)
+    start_date = models.DateField()
+    end_date = models.DateField(null=True, blank=True, help_text="Null = ongoing.")
+    # Prophylaxis split — valid only on a prophylaxis course (clean() enforces).
+    completed_per_protocol = models.BooleanField(
+        null=True, blank=True, help_text="Prophylaxis only. Three-state: True/False/Unknown."
+    )
+    early_discontinuation_reason = models.CharField(
+        max_length=12, choices=EARLY_DISCONT_REASON_CHOICES, blank=True,
+        help_text="Prophylaxis only. Blank when not discontinued early.",
+    )
+    # Treatment-escalation split — valid only on a treatment course (clean() enforces).
+    dose_reduction_count = models.PositiveIntegerField(
+        null=True, blank=True, help_text="Treatment only. Number of dose reductions."
+    )
+    dose_reduction_reason = models.CharField(
+        max_length=120, blank=True, help_text="Treatment only."
+    )
+    # IS directionality — valid only on an immunosuppressant course (clean() enforces).
+    change_direction = models.CharField(
+        max_length=15, choices=IS_CHANGE_DIRECTION_CHOICES, blank=True,
+        help_text="Immunosuppressant only. Reduction vs intensification.",
+    )
+    cmv_management_intent = models.BooleanField(
+        null=True, blank=True,
+        help_text="Three-state: was this IS change made to manage CMV? True/False/Unknown.",
+    )
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return f"{self.recipient_id} {self.agent} ({self.course_type})"
+
+    @property
+    def duration_days(self):
+        """Course length in days. Derived, never stored — None while ongoing."""
+        if self.end_date is None:
+            return None
+        return (self.end_date - self.start_date).days
+
+    def _validate_course_type_fields(self):
+        """Prophylaxis-only and treatment-only fields must not cross over."""
+        if self.course_type == "treatment":
+            if self.completed_per_protocol is not None or self.early_discontinuation_reason:
+                raise ValidationError(
+                    "Prophylaxis-only fields (completed_per_protocol, "
+                    "early_discontinuation_reason) must be empty on a treatment course."
+                )
+        if self.course_type == "prophylaxis":
+            if self.dose_reduction_count is not None or self.dose_reduction_reason:
+                raise ValidationError(
+                    "Treatment-only fields (dose_reduction_count, dose_reduction_reason) "
+                    "must be empty on a prophylaxis course."
+                )
+
+    def clean(self):
+        super().clean()
+        if self.end_date is not None and self.end_date < self.start_date:
+            raise ValidationError("end_date cannot precede start_date.")
+        self._validate_course_type_fields()
+        if self.change_direction and self.drug_class != "immunosuppressant":
+            raise ValidationError(
+                "change_direction applies only to an immunosuppressant course."
+            )
+
+
+class RejectionEpisode(models.Model):
+    """One allograft-rejection episode on a recipient — mirrors the CMV-episode
+    shape (onset/resolved dates, type, treatment). Carries the Banff vocabulary and
+    a biopsy_proven flag. Suspected-vs-biopsy-proven inclusion is deferred (PRD):
+    the flag is modelled, never gated on here."""
+
+    recipient = models.ForeignKey(
+        Recipient, on_delete=models.CASCADE, related_name="rejection_episodes"
+    )
+    onset_date = models.DateField()
+    rejection_type = models.CharField(max_length=8, choices=REJECTION_TYPE_CHOICES)
+    banff_grade = models.CharField(max_length=12, choices=BANFF_GRADE_CHOICES, blank=True)
+    biopsy_proven = models.BooleanField(default=False)
+    biopsy_date = models.DateField(null=True, blank=True)
+    treatment = models.CharField(max_length=120, blank=True)
+    resolved_date = models.DateField(null=True, blank=True, help_text="Null = unresolved.")
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return f"{self.recipient_id} {self.rejection_type} @ {self.onset_date}"
+
+    def clean(self):
+        super().clean()
+        if self.biopsy_proven and self.biopsy_date is None:
+            raise ValidationError("A biopsy_proven episode must carry a biopsy_date.")
+        if self.biopsy_date is not None and self.biopsy_date < self.onset_date:
+            raise ValidationError("biopsy_date cannot precede onset_date.")
+        if self.resolved_date is not None and self.resolved_date < self.onset_date:
+            raise ValidationError("resolved_date cannot precede onset_date.")
+
+
+class Hospitalization(models.Model):
+    """An ALL-CAUSE admission on a recipient. CMV/rejection attribution is set BY
+    HAND by a reviewing clinician — NEVER auto-inferred from date overlap (the
+    guarantee is the absence of any save()/signal that populates the FKs). Both
+    attribution FKs are nullable with NO exactly-one constraint (both may be null).
+    cmv_attributable is a SEPARATE honest-denominator flag (US 36), independent of
+    the FK. length_of_stay is DERIVED (derive-don't-store)."""
+
+    recipient = models.ForeignKey(
+        Recipient, on_delete=models.CASCADE, related_name="hospitalizations"
+    )
+    admit_date = models.DateField()
+    discharge_date = models.DateField(null=True, blank=True, help_text="Null = still admitted.")
+    reason = models.CharField(
+        max_length=120, help_text="All-cause reason. Free text — never exported (leak vector)."
+    )
+    disposition = models.CharField(max_length=16, choices=DISPOSITION_CHOICES, blank=True)
+    cmv_attribution = models.ForeignKey(
+        CMVQuantitative, null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+        help_text="Reviewer-set link to the responsible positive draw. Never auto-inferred.",
+    )
+    rejection_attribution = models.ForeignKey(
+        RejectionEpisode, null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+        help_text="Reviewer-set link to the responsible rejection episode. Never auto-inferred.",
+    )
+    cmv_attributable = models.BooleanField(
+        default=False,
+        help_text="Honest-denominator flag (US 36): reviewer judgement that the admission is "
+        "CMV-attributable. Independent of cmv_attribution.",
+    )
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return f"{self.recipient_id} admit {self.admit_date}"
+
+    @property
+    def length_of_stay_days(self):
+        """LOS in days. Derived, never stored — None while still admitted."""
+        if self.discharge_date is None:
+            return None
+        return (self.discharge_date - self.admit_date).days
+
+    def clean(self):
+        super().clean()
+        if self.discharge_date is not None and self.discharge_date < self.admit_date:
+            raise ValidationError("discharge_date cannot precede admit_date.")
