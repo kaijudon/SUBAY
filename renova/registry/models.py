@@ -101,6 +101,13 @@ DISPOSITION_CHOICES = [
     ("discharged_home", "Discharged home"), ("transferred", "Transferred"),
     ("died", "Died"), ("against_advice", "Against medical advice"),
 ]
+# Slice 09 biobank-matrix vocabulary — provisional, structured (never free text)
+# so a sample type can't drift into an identifier. Deferred: the full label format
+# CMVKT-SUBJID-VISIT-MATRIX-TYPE (on standby, not exported this slice).
+MATRIX_CHOICES = [
+    ("plasma", "Plasma"), ("serum", "Serum"), ("pbmc", "PBMC"),
+    ("whole_blood", "Whole blood"), ("urine", "Urine"),
+]
 # Clinical Kotton-2018 severity, sourced from the pure deriver so the stored
 # choices can never drift from the tiers the episode logic ranks.
 SEVERITY_TIER_CHOICES = [(t, t.capitalize()) for t in SEVERITY_TIERS]
@@ -950,3 +957,145 @@ class Hospitalization(models.Model):
         super().clean()
         if self.discharge_date is not None and self.discharge_date < self.admit_date:
             raise ValidationError("discharge_date cannot precede admit_date.")
+
+
+class PipelineRun(models.Model):
+    """Slice-09 STUB closing the tube→analysis custody chain. Minimal placeholder
+    (id + history only) so `ConsumptionEvent.pipeline_run` is a real nullable FK
+    today; slice 10 (genotyping ingest) fleshes it out with real columns via its
+    own migration and sets the FK from `ingest_genotyping`."""
+
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return f"PipelineRun {self.pk}"
+
+
+class Aliquot(models.Model):
+    """One straw of post-clinical-assay residual — the canonical physical record,
+    one portion per matrix per timepoint. The event-sourced ledger root: thaw and
+    consumption are APPENDED (never edited), so `remaining_ul` and `thaw_count` are
+    DERIVED @property by summing the event log and can never drift from the
+    physical freezer or lie about history (derive-don't-store). The ledger needs
+    only a volume, so the visit FK is opportunistic (nullable; slice 03)."""
+
+    recipient_visit = models.ForeignKey(
+        RecipientVisit,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="aliquots",
+        help_text="Opportunistic per-timepoint anchor (slice 03). Null = unanchored straw.",
+    )
+    matrix = models.CharField(max_length=12, choices=MATRIX_CHOICES)
+    collected_date = models.DateField()
+    initial_volume_ul = models.DecimalField(
+        max_digits=10, decimal_places=2, help_text="As-banked volume, µL. The ledger ceiling."
+    )
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return f"Aliquot {self.pk} ({self.matrix})"
+
+    @property
+    def remaining_ul(self):
+        """initial_volume_ul − Σ consumption volumes. Derived, never stored, so the
+        ledger cannot drift from the freezer."""
+        consumed = sum(
+            (e.volume_ul for e in self.consumption_events.all()), Decimal("0")
+        )
+        return self.initial_volume_ul - consumed
+
+    @property
+    def thaw_count(self):
+        """Number of appended thaw events. Derived, never stored."""
+        return self.thaw_events.count()
+
+
+class ThawEvent(models.Model):
+    """An append-only thaw record. A unique constraint on `aliquot` enforces
+    single-use / no-refreeze at the DB level — a second thaw is rejected."""
+
+    aliquot = models.ForeignKey(
+        Aliquot, on_delete=models.CASCADE, related_name="thaw_events"
+    )
+    thawed_date = models.DateField()
+    history = HistoricalRecords()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                name="thawevent_single_use_no_refreeze", fields=["aliquot"]
+            ),
+        ]
+
+    def __str__(self):
+        return f"Thaw of aliquot {self.aliquot_id}"
+
+
+class ConsumptionEvent(models.Model):
+    """An append-only consumption record drawing volume off an aliquot. Over-draw is
+    rejected at BOTH layers: a DB CheckConstraint (volume_ul > 0) and an app-layer
+    clean() guard (volume_ul must not exceed the aliquot's current remaining_ul).
+    `pipeline_run` is a nullable FK closing the tube→analysis custody chain."""
+
+    aliquot = models.ForeignKey(
+        Aliquot, on_delete=models.CASCADE, related_name="consumption_events"
+    )
+    pipeline_run = models.ForeignKey(
+        "PipelineRun",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="consumption_events",
+        help_text="Analysis run that consumed this volume (slice 10). Null = not yet linked.",
+    )
+    volume_ul = models.DecimalField(
+        max_digits=10, decimal_places=2, help_text="Volume drawn, µL. Must be > 0."
+    )
+    consumed_date = models.DateField()
+    history = HistoricalRecords()
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                name="consumptionevent_volume_positive", condition=models.Q(volume_ul__gt=0)
+            ),
+        ]
+
+    def __str__(self):
+        return f"Consumption of {self.volume_ul}µL from aliquot {self.aliquot_id}"
+
+    def clean(self):
+        super().clean()
+        if self.volume_ul is not None and self.volume_ul <= 0:
+            raise ValidationError("volume_ul must be greater than zero.")
+        # App-layer over-consumption guard: the draw cannot exceed what remains.
+        # remaining_ul sums the already-saved events, excluding this unsaved one.
+        if self.volume_ul is not None and self.aliquot_id is not None:
+            if self.volume_ul > self.aliquot.remaining_ul:
+                raise ValidationError(
+                    f"volume_ul {self.volume_ul} exceeds the aliquot's remaining "
+                    f"{self.aliquot.remaining_ul}µL."
+                )
+
+
+class SequencingAliquot(models.Model):
+    """The ONE aliquot transferred to PGC for sequencing, kept DISTINCT from the
+    SPMC-held residual (its own table, OneToOne to the source `Aliquot`). Carries
+    the destruction-certificate field per MOA. Saving one does not touch the source
+    aliquot's ledger."""
+
+    aliquot = models.OneToOneField(
+        Aliquot, on_delete=models.CASCADE, related_name="sequencing_aliquot"
+    )
+    transfer_date = models.DateField()
+    destruction_certificate = models.CharField(
+        max_length=120,
+        help_text="PGC destruction certificate ref per MOA (default per-sample). "
+        "Free text — never exported (leak vector).",
+    )
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return f"SequencingAliquot for aliquot {self.aliquot_id}"
