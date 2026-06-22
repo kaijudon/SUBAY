@@ -6,9 +6,12 @@ from renova.registry.models import (
     CMVQuantitative,
     CMVSerology,
     DrugLevel,
+    Hospitalization,
+    MedicationCourse,
     OtherCondition,
     Recipient,
     RecipientVisit,
+    RejectionEpisode,
     RenalFunction,
     TBNKPanel,
 )
@@ -95,3 +98,30 @@ def test_quantitative_admin_shows_severity_tier():
 def test_recipient_admin_has_episode_summary_readonly():
     ma = admin.site._registry[Recipient]
     assert "cmv_episode_summary" in ma.readonly_fields
+
+
+# --- Slice 08: clinical events as recipient inlines ---
+
+
+def test_recipient_admin_has_slice08_inlines():
+    ma = admin.site._registry[Recipient]
+    inline_models = [i.model for i in ma.inlines]
+    assert MedicationCourse in inline_models
+    assert RejectionEpisode in inline_models
+    assert Hospitalization in inline_models
+
+
+def test_slice08_models_are_registered():
+    assert MedicationCourse in admin.site._registry
+    assert RejectionEpisode in admin.site._registry
+    assert Hospitalization in admin.site._registry
+
+
+def test_medication_admin_has_duration_readonly():
+    ma = admin.site._registry[MedicationCourse]
+    assert "duration_days" in ma.readonly_fields
+
+
+def test_hospitalization_admin_has_los_readonly():
+    ma = admin.site._registry[Hospitalization]
+    assert "length_of_stay_days" in ma.readonly_fields

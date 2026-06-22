@@ -8,9 +8,12 @@ from .models import (
     Donor,
     DonorVisit,
     DrugLevel,
+    Hospitalization,
+    MedicationCourse,
     OtherCondition,
     Recipient,
     RecipientVisit,
+    RejectionEpisode,
     RenalFunction,
     TBNKPanel,
 )
@@ -64,6 +67,21 @@ class DonorVisitInline(admin.TabularInline):
     extra = 0
 
 
+class MedicationCourseInline(admin.TabularInline):
+    model = MedicationCourse
+    extra = 0
+
+
+class RejectionEpisodeInline(admin.TabularInline):
+    model = RejectionEpisode
+    extra = 0
+
+
+class HospitalizationInline(admin.TabularInline):
+    model = Hospitalization
+    extra = 0
+
+
 @admin.register(Recipient)
 class RecipientAdmin(SimpleHistoryAdmin):
     list_display = (
@@ -74,7 +92,10 @@ class RecipientAdmin(SimpleHistoryAdmin):
     readonly_fields = (
         "age", "risk_stratum", "has_donor_serostatus_mismatch", "cmv_episode_summary",
     )
-    inlines = [RecipientVisitInline, OtherConditionInline]
+    inlines = [
+        RecipientVisitInline, OtherConditionInline,
+        MedicationCourseInline, RejectionEpisodeInline, HospitalizationInline,
+    ]
 
 
 @admin.register(RecipientVisit)
@@ -154,3 +175,29 @@ class DrugLevelAdmin(SimpleHistoryAdmin):
     list_display = (
         "id", "recipient_visit", "donor", "analyte", "value", "result_status", "drawn_date",
     )
+
+
+@admin.register(MedicationCourse)
+class MedicationCourseAdmin(SimpleHistoryAdmin):
+    list_display = (
+        "id", "recipient", "drug_class", "agent", "dose_amount", "dose_unit", "frequency",
+        "course_type", "change_direction", "duration_days",
+    )
+    readonly_fields = ("duration_days",)  # derived, never stored
+
+
+@admin.register(RejectionEpisode)
+class RejectionEpisodeAdmin(SimpleHistoryAdmin):
+    list_display = (
+        "id", "recipient", "onset_date", "rejection_type", "banff_grade",
+        "biopsy_proven", "resolved_date",
+    )
+
+
+@admin.register(Hospitalization)
+class HospitalizationAdmin(SimpleHistoryAdmin):
+    list_display = (
+        "id", "recipient", "admit_date", "discharge_date", "length_of_stay_days",
+        "disposition", "cmv_attributable",
+    )
+    readonly_fields = ("length_of_stay_days",)  # derived, never stored

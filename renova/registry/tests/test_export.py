@@ -15,9 +15,12 @@ from renova.registry.models import (
     Donor,
     DonorVisit,
     DrugLevel,
+    Hospitalization,
+    MedicationCourse,
     OtherCondition,
     Recipient,
     RecipientVisit,
+    RejectionEpisode,
     RenalFunction,
     TBNKPanel,
 )
@@ -76,6 +79,9 @@ def test_export_produces_one_csv_per_model_with_keys_intact(seeded, tmp_path):
         "renalfunction.csv",
         "druglevel.csv",
         "cmvepisode.csv",
+        "medicationcourse.csv",
+        "rejectionepisode.csv",
+        "hospitalization.csv",
         "manifest.json",
     }
 
@@ -736,6 +742,161 @@ def test_export_refuses_on_leaky_severity_tier(db, tmp_path):
     CMVQuantitative.objects.create(
         recipient_visit=v, value=Decimal("10"), drawn_date=date(2025, 1, 31)
     )
+    with pytest.raises(CommandError):
+        call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    assert not (tmp_path / "v0.1").exists()
+
+
+# --- Slice 08: medication courses + rejection episodes + hospitalizations ---
+
+
+@pytest.fixture
+def seeded_slice08(db):
+    """A recipient with a prophylaxis course, a treatment IS-change course, a
+    biopsy-proven rejection episode, and a hospitalization whose admit window
+    overlaps a positive CMV draw with attribution hand-set to that draw. The full
+    Slice 08 export surface for the leak scan."""
+    r = Recipient.objects.create(
+        subject_id="SCMVR07", date_of_birth=date(1980, 1, 1), sex="M", kt_date=date(2025, 1, 1)
+    )
+    MedicationCourse.objects.create(
+        recipient=r, drug_class="antiviral", agent="valganciclovir",
+        dose_amount=Decimal("900"), dose_unit="mg", frequency="qd",
+        course_type="prophylaxis", start_date=date(2025, 1, 1), end_date=date(2025, 3, 2),
+        completed_per_protocol=True,
+    )
+    MedicationCourse.objects.create(
+        recipient=r, drug_class="immunosuppressant", agent="tacrolimus",
+        dose_amount=Decimal("2"), dose_unit="mg", frequency="bid",
+        course_type="treatment", start_date=date(2025, 4, 1), end_date=date(2025, 4, 15),
+        dose_reduction_count=1, dose_reduction_reason="leukopenia",
+        change_direction="reduction", cmv_management_intent=True,
+    )
+    rej = RejectionEpisode.objects.create(
+        recipient=r, onset_date=date(2025, 5, 1), rejection_type="tcmr", banff_grade="ia",
+        biopsy_proven=True, biopsy_date=date(2025, 5, 2), treatment="steroid pulse",
+        resolved_date=date(2025, 5, 20),
+    )
+    v = RecipientVisit.objects.create(
+        recipient=r, timepoint_label="day_90", actual_visit_date=date(2025, 4, 5)
+    )
+    q = CMVQuantitative.objects.create(
+        recipient_visit=v, value=Decimal("1500"), drawn_date=date(2025, 4, 5)
+    )
+    Hospitalization.objects.create(
+        recipient=r, admit_date=date(2025, 4, 3), discharge_date=date(2025, 4, 9),
+        reason="cmv viremia workup", disposition="discharged_home",
+        cmv_attribution=q, rejection_attribution=rej, cmv_attributable=True,
+    )
+    return r
+
+
+def test_export_writes_slice08_files(seeded_slice08, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    for name in ("medicationcourse.csv", "rejectionepisode.csv", "hospitalization.csv"):
+        assert (out / name).exists()
+
+
+def test_export_medication_course_columns_are_offsets_and_structured(seeded_slice08, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    with (out / "medicationcourse.csv").open(newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    proph = [r for r in rows if r["course_type"] == "prophylaxis"][0]
+    assert proph["recipient"] == "SCMVR07"
+    assert proph["drug_class"] == "antiviral"
+    assert proph["agent"] == "valganciclovir"
+    assert proph["dose_amount"] == "900.00"
+    assert proph["dose_unit"] == "mg"
+    assert proph["frequency"] == "qd"
+    assert proph["start_day_offset"] == "0"  # 2025-01-01 == kt day 0
+    assert proph["end_day_offset"] == "60"  # 2025-03-02 is 60 days after kt
+    assert proph["duration_days"] == "60"  # derived day-count, not a date
+    assert proph["completed_per_protocol"] == "true"
+
+    treat = [r for r in rows if r["course_type"] == "treatment"][0]
+    assert treat["change_direction"] == "reduction"
+    assert treat["cmv_management_intent"] == "true"
+    assert treat["dose_reduction_count"] == "1"
+    assert treat["dose_reduction_reason"] == "leukopenia"
+
+
+def test_export_rejection_episode_columns_are_offsets(seeded_slice08, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    with (out / "rejectionepisode.csv").open(newline="") as fh:
+        row = list(csv.DictReader(fh))[0]
+    assert row["recipient"] == "SCMVR07"
+    assert row["rejection_type"] == "tcmr"
+    assert row["banff_grade"] == "ia"
+    assert row["biopsy_proven"] == "true"
+    assert row["onset_day_offset"] == "120"  # 2025-05-01 is 120 days after kt
+    assert row["biopsy_day_offset"] == "121"
+    assert row["resolved_day_offset"] == "139"
+
+
+def test_export_hospitalization_columns_are_offsets_and_los_derived(seeded_slice08, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    with (out / "hospitalization.csv").open(newline="") as fh:
+        row = list(csv.DictReader(fh))[0]
+    assert row["recipient"] == "SCMVR07"
+    assert row["admit_day_offset"] == "92"  # 2025-04-03 is 92 days after kt
+    assert row["discharge_day_offset"] == "98"
+    assert row["length_of_stay_days"] == "6"  # derived day-count
+    assert row["disposition"] == "discharged_home"
+    assert row["cmv_attribution"] != ""  # reviewer-set FK id present
+    assert row["rejection_attribution"] != ""
+    assert row["cmv_attributable"] == "true"
+
+
+def test_export_hospitalization_reason_never_exported(seeded_slice08, tmp_path):
+    """reason is free text -> a leak vector; disposition carries the signal."""
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    for f in out.glob("*.csv"):
+        text = f.read_text()
+        assert "cmv viremia workup" not in text
+    # reason is not even a column header anywhere
+    with (out / "hospitalization.csv").open(newline="") as fh:
+        assert "reason" not in csv.DictReader(fh).fieldnames
+
+
+def test_export_manifest_lists_slice08_files(seeded_slice08, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    manifest = json.loads((out / "manifest.json").read_text())
+    for name in ("medicationcourse.csv", "rejectionepisode.csv", "hospitalization.csv"):
+        assert name in manifest["files"]
+    assert manifest["files"]["medicationcourse.csv"]["columns"]["recipient"] == "c"
+
+
+def test_export_slice08_leak_scan_over_new_files_and_columns(seeded_slice08, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    for f in out.glob("*.csv"):
+        text = f.read_text()
+        assert "2025-01-01" not in text  # kt_date / course start never a calendar date
+        assert "2025-03-02" not in text  # course end
+        assert "2025-05-01" not in text  # rejection onset
+        assert "2025-04-03" not in text  # admit date
+        assert "2025-04-09" not in text  # discharge date
+        assert "1980-01-01" not in text  # dob
+
+
+def test_export_refuses_on_leaky_medication_agent(db, tmp_path):
+    """A name-shaped value in an exported column (agent) triggers refusal with
+    nothing written (the chokepoint stays intact)."""
+    r = Recipient.objects.create(
+        subject_id="SCMVR07", date_of_birth=date(1980, 1, 1), sex="M", kt_date=date(2025, 1, 1)
+    )
+    c = MedicationCourse(
+        recipient=r, drug_class="antiviral", dose_amount=Decimal("900"), dose_unit="mg",
+        frequency="qd", course_type="prophylaxis", start_date=date(2025, 1, 1),
+    )
+    c.agent = "Maria Santos"  # name-shaped leak into an exported column
+    c.save()  # bypass clean()
     with pytest.raises(CommandError):
         call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
     assert not (tmp_path / "v0.1").exists()
