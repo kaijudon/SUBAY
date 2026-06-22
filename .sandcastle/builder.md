@@ -7,6 +7,9 @@ Read both.
 If `docs/plans/Slice{{SLICE}}-review.md` exists, the Reviewer requested changes —
 read it FIRST and address every numbered item this round.
 
+Read `docs/decisions/DECISIONS.md` for prior-slice design rationale; do not
+contradict a settled decision there.
+
 Repo conventions (study `renova/registry/` before writing):
 - Validation lives ON THE MODELS (clean()/constraints), not the admin.
 - Subject IDs are STRINGS (`[S|D]CMV[R|D][NN]`); never coerce to int.

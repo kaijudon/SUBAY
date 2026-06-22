@@ -5,6 +5,9 @@ You PLAN one RENOVA vertical slice. Do NOT write feature or test code.
 The slice's issue card is `prd/issues/{{SLICE}}-*.md`. Read it, and read the
 parent spec `prd/CMV-KT_Research_Database_PRD.md`.
 
+Read `docs/decisions/DECISIONS.md` — the design rationale for prior slices.
+Do NOT contradict a settled decision there; build on it.
+
 First study the existing code so the plan fits reality:
 - `renova/registry/models.py`, `validators.py`, `admin.py`
 - `renova/registry/management/commands/export_analysis_set.py`
