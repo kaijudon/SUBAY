@@ -2,20 +2,25 @@ from django.contrib import admin
 from simple_history.admin import SimpleHistoryAdmin
 
 from .models import (
+    Aliquot,
     ClosureDay,
     CMVQuantitative,
     CMVSerology,
+    ConsumptionEvent,
     Donor,
     DonorVisit,
     DrugLevel,
     Hospitalization,
     MedicationCourse,
     OtherCondition,
+    PipelineRun,
     Recipient,
     RecipientVisit,
     RejectionEpisode,
     RenalFunction,
+    SequencingAliquot,
     TBNKPanel,
+    ThawEvent,
 )
 from .sites import RenovaAdminSite  # re-exported; the class is defined in sites.py
 
@@ -201,3 +206,58 @@ class HospitalizationAdmin(SimpleHistoryAdmin):
         "disposition", "cmv_attributable",
     )
     readonly_fields = ("length_of_stay_days",)  # derived, never stored
+
+
+# --- Slice 09: biobank ledger (append-only events) ---
+
+
+class AppendOnlyEventMixin:
+    """Append-only audit guarantee (AC2): a recorded thaw/consumption event can be
+    ADDED but never changed or deleted, in inline and standalone admin alike — the
+    event log is immutable so the ledger cannot be rewritten."""
+
+    def has_change_permission(self, request, obj=None):
+        return obj is None  # allow the add form, forbid editing an existing event
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+class ThawEventInline(AppendOnlyEventMixin, admin.TabularInline):
+    model = ThawEvent
+    extra = 0
+
+
+class ConsumptionEventInline(AppendOnlyEventMixin, admin.TabularInline):
+    model = ConsumptionEvent
+    extra = 0
+
+
+@admin.register(Aliquot)
+class AliquotAdmin(SimpleHistoryAdmin):
+    list_display = (
+        "id", "recipient_visit", "matrix", "collected_date", "initial_volume_ul",
+        "remaining_ul", "thaw_count",
+    )
+    readonly_fields = ("remaining_ul", "thaw_count")  # derived from the event log
+    inlines = [ThawEventInline, ConsumptionEventInline]
+
+
+@admin.register(ThawEvent)
+class ThawEventAdmin(AppendOnlyEventMixin, SimpleHistoryAdmin):
+    list_display = ("id", "aliquot", "thawed_date")
+
+
+@admin.register(ConsumptionEvent)
+class ConsumptionEventAdmin(AppendOnlyEventMixin, SimpleHistoryAdmin):
+    list_display = ("id", "aliquot", "volume_ul", "consumed_date", "pipeline_run")
+
+
+@admin.register(SequencingAliquot)
+class SequencingAliquotAdmin(SimpleHistoryAdmin):
+    list_display = ("id", "aliquot", "transfer_date", "destruction_certificate")
+
+
+@admin.register(PipelineRun)
+class PipelineRunAdmin(SimpleHistoryAdmin):
+    list_display = ("id",)

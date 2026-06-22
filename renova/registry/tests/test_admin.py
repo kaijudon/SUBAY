@@ -1,10 +1,13 @@
+import pytest
 from django.contrib import admin
 from django_otp.admin import OTPAdminSite
 
 from renova.registry.admin import RenovaAdminSite
 from renova.registry.models import (
+    Aliquot,
     CMVQuantitative,
     CMVSerology,
+    ConsumptionEvent,
     DrugLevel,
     Hospitalization,
     MedicationCourse,
@@ -13,7 +16,9 @@ from renova.registry.models import (
     RecipientVisit,
     RejectionEpisode,
     RenalFunction,
+    SequencingAliquot,
     TBNKPanel,
+    ThawEvent,
 )
 
 
@@ -125,3 +130,48 @@ def test_medication_admin_has_duration_readonly():
 def test_hospitalization_admin_has_los_readonly():
     ma = admin.site._registry[Hospitalization]
     assert "length_of_stay_days" in ma.readonly_fields
+
+
+# --- Slice 09: biobank ledger admin ---
+
+
+def test_slice09_models_are_registered():
+    assert Aliquot in admin.site._registry
+    assert ThawEvent in admin.site._registry
+    assert ConsumptionEvent in admin.site._registry
+    assert SequencingAliquot in admin.site._registry
+
+
+def test_aliquot_admin_has_event_inlines_and_derived_readonly():
+    ma = admin.site._registry[Aliquot]
+    inline_models = [i.model for i in ma.inlines]
+    assert ThawEvent in inline_models
+    assert ConsumptionEvent in inline_models
+    assert "remaining_ul" in ma.readonly_fields
+    assert "thaw_count" in ma.readonly_fields
+
+
+@pytest.mark.parametrize("model", [ThawEvent, ConsumptionEvent])
+def test_event_admin_is_append_only(model):
+    """AC2: a recorded thaw/consumption offers no edit or delete — only add."""
+    ma = admin.site._registry[model]
+    obj = object()  # a stand-in 'existing' object
+    assert ma.has_change_permission(_req(), obj) is False
+    assert ma.has_delete_permission(_req(), obj) is False
+    # Adding is still allowed (append-only, not read-only): the mixin does not
+    # override has_add_permission, so a permitted user may record a new event.
+    assert ma.has_add_permission(_req()) is True
+
+
+class _User:
+    def has_perm(self, perm):
+        return True
+
+
+class _Req:
+    method = "GET"
+    user = _User()
+
+
+def _req():
+    return _Req()

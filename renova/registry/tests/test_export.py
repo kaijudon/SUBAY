@@ -9,9 +9,11 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 
 from renova.registry.models import (
+    Aliquot,
     ClosureDay,
     CMVQuantitative,
     CMVSerology,
+    ConsumptionEvent,
     Donor,
     DonorVisit,
     DrugLevel,
@@ -22,7 +24,9 @@ from renova.registry.models import (
     RecipientVisit,
     RejectionEpisode,
     RenalFunction,
+    SequencingAliquot,
     TBNKPanel,
+    ThawEvent,
 )
 
 
@@ -82,6 +86,7 @@ def test_export_produces_one_csv_per_model_with_keys_intact(seeded, tmp_path):
         "medicationcourse.csv",
         "rejectionepisode.csv",
         "hospitalization.csv",
+        "aliquot.csv",
         "manifest.json",
     }
 
@@ -897,6 +902,109 @@ def test_export_refuses_on_leaky_medication_agent(db, tmp_path):
     )
     c.agent = "Maria Santos"  # name-shaped leak into an exported column
     c.save()  # bypass clean()
+    with pytest.raises(CommandError):
+        call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    assert not (tmp_path / "v0.1").exists()
+
+
+# --- Slice 09: biobank ledger export (AC7) ---
+
+
+@pytest.fixture
+def seeded_slice09(db):
+    """A visit-anchored aliquot with one thaw and two consumption events (one tied
+    to a pipeline run), plus a sequencing transfer with a destruction certificate.
+    The full Slice 09 export surface for the leak scan."""
+    r = Recipient.objects.create(
+        subject_id="SCMVR07", date_of_birth=date(1980, 1, 1), sex="M", kt_date=date(2025, 1, 1)
+    )
+    v = RecipientVisit.objects.create(
+        recipient=r, timepoint_label="day_7", actual_visit_date=date(2025, 1, 15)
+    )
+    a = Aliquot.objects.create(
+        recipient_visit=v, matrix="plasma", collected_date=date(2025, 1, 15),
+        initial_volume_ul=Decimal("1000"),
+    )
+    ThawEvent.objects.create(aliquot=a, thawed_date=date(2025, 2, 1))
+    ConsumptionEvent.objects.create(
+        aliquot=a, volume_ul=Decimal("200"), consumed_date=date(2025, 2, 1)
+    )
+    ConsumptionEvent.objects.create(
+        aliquot=a, volume_ul=Decimal("150"), consumed_date=date(2025, 2, 2)
+    )
+    SequencingAliquot.objects.create(
+        aliquot=a, transfer_date=date(2025, 3, 1), destruction_certificate="MOA-2025-0042"
+    )
+    return r
+
+
+def test_export_writes_aliquot_file(seeded_slice09, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    assert (tmp_path / "v0.1" / "aliquot.csv").exists()
+
+
+def test_export_aliquot_materializes_derived_volume_and_thaw_count(seeded_slice09, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    with (out / "aliquot.csv").open(newline="") as fh:
+        row = list(csv.DictReader(fh))[0]
+    assert row["recipient"] == "SCMVR07"  # FK key intact via the visit anchor
+    assert row["matrix"] == "plasma"
+    assert row["collected_day_offset"] == "14"  # 2025-01-15 is 14 days after kt
+    assert row["initial_volume_ul"] == "1000.00"
+    assert row["remaining_ul"] == "650.00"  # 1000 - (200 + 150), materialized derived
+    assert row["thaw_count"] == "1"  # materialized derived
+
+
+def test_export_aliquot_without_visit_blanks_offset_and_recipient(db, tmp_path):
+    Aliquot.objects.create(
+        matrix="serum", collected_date=date(2025, 1, 15), initial_volume_ul=Decimal("500")
+    )
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    with (out / "aliquot.csv").open(newline="") as fh:
+        row = list(csv.DictReader(fh))[0]
+    assert row["recipient"] == ""  # no visit anchor
+    assert row["collected_day_offset"] == ""  # no kt anchor -> never a calendar date
+    assert row["remaining_ul"] == "500.00"
+
+
+def test_export_manifest_lists_aliquot_file(seeded_slice09, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    manifest = json.loads((out / "manifest.json").read_text())
+    assert "aliquot.csv" in manifest["files"]
+    assert manifest["files"]["aliquot.csv"]["columns"]["recipient"] == "c"
+
+
+def test_export_destruction_certificate_never_exported(seeded_slice09, tmp_path):
+    """The destruction certificate is free text -> a leak vector, never exported."""
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    for f in out.glob("*.csv"):
+        assert "MOA-2025-0042" not in f.read_text()
+
+
+def test_export_slice09_leak_scan_over_new_files_and_columns(seeded_slice09, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    for f in out.glob("*.csv"):
+        text = f.read_text()
+        assert "2025-01-15" not in text  # aliquot collected_date never a calendar date
+        assert "2025-02-01" not in text  # thaw / consumption event dates
+        assert "2025-03-01" not in text  # sequencing transfer_date
+        assert "2025-01-01" not in text  # kt_date
+        assert "1980-01-01" not in text  # dob
+
+
+def test_export_refuses_on_leaky_aliquot_matrix(db, tmp_path):
+    """A name-shaped value staged into an exported column (matrix) triggers refusal
+    with nothing written (the chokepoint stays intact), bypassing clean()."""
+    a = Aliquot(
+        matrix="plasma", collected_date=date(2025, 1, 15), initial_volume_ul=Decimal("500")
+    )
+    a.matrix = "Maria Santos"  # name-shaped leak into an exported column
+    a.save()  # bypass clean()
     with pytest.raises(CommandError):
         call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
     assert not (tmp_path / "v0.1").exists()
