@@ -1380,6 +1380,27 @@ class QpcrProbeReading(models.Model):
     reviewed_at = models.DateField(null=True, blank=True)
     history = HistoricalRecords()
 
+    class Meta:
+        # DB-level second-reviewer gate, mirroring GenotypeCall's lock so a bare
+        # .save() (not just full_clean/admin/ingest) cannot bypass it. Both fire
+        # only on an indeterminate ('I') reading; non-'I' rows are unconstrained.
+        constraints = [
+            models.CheckConstraint(
+                name="qpcrprobereading_indeterminate_requires_reviewer",
+                condition=(
+                    ~models.Q(call="I")
+                    | models.Q(reviewed_by__isnull=False, reviewed_at__isnull=False)
+                ),
+            ),
+            models.CheckConstraint(
+                name="qpcrprobereading_reviewer_differs_when_indeterminate",
+                condition=(
+                    ~models.Q(call="I")
+                    | ~models.Q(reviewed_by=models.F("entered_by"))
+                ),
+            ),
+        ]
+
     def __str__(self):
         return f"{self.probe}={self.call}"
 

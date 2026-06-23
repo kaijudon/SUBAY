@@ -224,6 +224,28 @@ def test_indeterminate_reading_with_different_reviewer_ok(result, editor, review
     reading.full_clean()
 
 
+def test_indeterminate_reading_reviewer_enforced_at_db(result, editor):
+    """DB CheckConstraint blocks a bare .save() of an 'I' reading with no
+    reviewer — clean() alone is bypassable (mirrors GenotypeCall's lock)."""
+    detail = QpcrDetail.objects.create(result=result)
+    with pytest.raises(IntegrityError):
+        with transaction.atomic():
+            QpcrProbeReading.objects.create(
+                qpcr_detail=detail, probe="gB1", call="I", entered_by=editor
+            )
+
+
+def test_indeterminate_reading_self_review_blocked_at_db(result, editor):
+    """DB CheckConstraint blocks a self-review (reviewer == editor) on a bare save."""
+    detail = QpcrDetail.objects.create(result=result)
+    with pytest.raises(IntegrityError):
+        with transaction.atomic():
+            QpcrProbeReading.objects.create(
+                qpcr_detail=detail, probe="gB1", call="I", entered_by=editor,
+                reviewed_by=editor, reviewed_at=date(2025, 2, 1),
+            )
+
+
 # --- AC10: Ross 2020 reference set SHA-pinned ---
 
 

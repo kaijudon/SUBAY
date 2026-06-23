@@ -232,8 +232,7 @@ def test_export_materializes_baseline_and_derived(seeded_baseline, tmp_path):
     with (out / "donor.csv").open(newline="") as fh:
         drow = list(csv.DictReader(fh))[0]
     assert drow["donor_type"] == "living"
-    assert drow["relation"] == "sibling"
-    assert drow["baseline_serostatus"] == "NEG"
+    assert drow["baseline_serostatus"] == "NEG"  # relation (free text) not exported
 
 
 def test_export_othercondition_is_one_row_per_condition(seeded_baseline, tmp_path):
@@ -830,7 +829,55 @@ def test_export_medication_course_columns_are_offsets_and_structured(seeded_slic
     assert treat["change_direction"] == "reduction"
     assert treat["cmv_management_intent"] == "true"
     assert treat["dose_reduction_count"] == "1"
-    assert treat["dose_reduction_reason"] == "leukopenia"
+    # dose_reduction_reason (free text) is a leak vector and not exported; the
+    # structured dose_reduction_count carries the analyzable signal.
+    assert "dose_reduction_reason" not in rows[0].keys()
+
+
+def test_export_medication_dose_reduction_reason_never_exported(seeded_slice08, tmp_path):
+    """dose_reduction_reason is free text -> a leak vector; it must not be a column
+    nor have its value reach any file."""
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    for f in out.glob("*.csv"):
+        assert "leukopenia" not in f.read_text()
+    with (out / "medicationcourse.csv").open(newline="") as fh:
+        assert "dose_reduction_reason" not in csv.DictReader(fh).fieldnames
+
+
+def test_export_rejection_treatment_never_exported(seeded_slice08, tmp_path):
+    """treatment is free text -> a leak vector; rejection_type + banff_grade carry
+    the signal."""
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    for f in out.glob("*.csv"):
+        assert "steroid pulse" not in f.read_text()
+    with (out / "rejectionepisode.csv").open(newline="") as fh:
+        assert "treatment" not in csv.DictReader(fh).fieldnames
+
+
+def test_export_donor_relation_never_exported(seeded_baseline, tmp_path):
+    """relation is free text -> a leak vector; donor_type carries the signal."""
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    for f in out.glob("*.csv"):
+        assert "sibling" not in f.read_text()
+    with (out / "donor.csv").open(newline="") as fh:
+        assert "relation" not in csv.DictReader(fh).fieldnames
+
+
+def test_export_refuses_on_slash_format_date_in_free_text(db, tmp_path):
+    """The leak scanner must catch a US/EU slash-format date (not just ISO) in any
+    exported free-text cell. OtherCondition.condition is the model's payload and
+    stays exported, so it is the surface for this regression. Export must refuse
+    with nothing written."""
+    r = Recipient.objects.create(
+        subject_id="SCMVR07", date_of_birth=date(1980, 1, 1), sex="M", kt_date=date(2025, 1, 1)
+    )
+    OtherCondition.objects.create(recipient=r, condition="onset 03/15/2020 per chart")
+    with pytest.raises(CommandError):
+        call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    assert not (tmp_path / "v0.1").exists()
 
 
 def test_export_rejection_episode_columns_are_offsets(seeded_slice08, tmp_path):
