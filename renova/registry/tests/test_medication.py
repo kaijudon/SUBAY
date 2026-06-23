@@ -11,6 +11,7 @@ from decimal import Decimal
 
 import pytest
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
 
 from renova.registry.models import MedicationCourse, Recipient
 
@@ -111,6 +112,30 @@ def test_dose_reduction_reason_rejected_on_prophylaxis_course(recipient):
     c = _prophylaxis(recipient, dose_reduction_reason="leukopenia")
     with pytest.raises(ValidationError):
         c.clean()
+
+
+def test_prophylaxis_fields_rejected_at_db_on_treatment(recipient):
+    """DB CheckConstraint blocks a bare create that skips clean()."""
+    with pytest.raises(IntegrityError):
+        with transaction.atomic():
+            MedicationCourse.objects.create(
+                recipient=recipient, drug_class="antiviral", agent="x",
+                dose_amount=Decimal("1"), dose_unit="mg", frequency="qd",
+                course_type="treatment", start_date=date(2025, 1, 1),
+                completed_per_protocol=True,
+            )
+
+
+def test_treatment_fields_rejected_at_db_on_prophylaxis(recipient):
+    """DB CheckConstraint blocks a bare create that skips clean()."""
+    with pytest.raises(IntegrityError):
+        with transaction.atomic():
+            MedicationCourse.objects.create(
+                recipient=recipient, drug_class="antiviral", agent="x",
+                dose_amount=Decimal("1"), dose_unit="mg", frequency="qd",
+                course_type="prophylaxis", start_date=date(2025, 1, 1),
+                dose_reduction_count=2,
+            )
 
 
 def test_duration_days_derived(recipient):
