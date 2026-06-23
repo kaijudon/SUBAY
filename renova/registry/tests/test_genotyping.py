@@ -288,6 +288,28 @@ def test_reference_set_content_sha_immutable(db):
         rs.full_clean()
 
 
+def test_reference_set_content_sha_immutable_via_update(db):
+    """The append-only clean() guard is bypassable by QuerySet.update(); the
+    AppendOnlyQuerySet manager closes that ORM vector."""
+    rs = ReferenceSet.objects.create(name="Ross 2020", content_sha256="f" * 64)
+    with pytest.raises(ValueError):
+        ReferenceSet.objects.filter(pk=rs.pk).update(content_sha256="0" * 64)
+    # a non-immutable field still updates fine
+    assert ReferenceSet.objects.filter(pk=rs.pk).update(citation="updated") == 1
+
+
+def test_sanger_raw_ref_immutable_via_update(result):
+    sd = SangerDetail.objects.create(
+        result=result, raw_ab1_sha256="b" * 64, raw_ab1_path="b" * 64
+    )
+    with pytest.raises(ValueError):
+        SangerDetail.objects.filter(pk=sd.pk).update(raw_ab1_sha256="c" * 64)
+    with pytest.raises(ValueError):
+        SangerDetail.objects.filter(pk=sd.pk).update(raw_ab1_path="elsewhere")
+    # consensus is editable, not append-only
+    assert SangerDetail.objects.filter(pk=sd.pk).update(consensus_sequence="ACGT") == 1
+
+
 def test_reference_accession_unique_per_set(db):
     rs = ReferenceSet.objects.create(name="Ross 2020", content_sha256="f" * 64)
     ReferenceAccession.objects.create(reference_set=rs, accession="X04650", genotype="gB1")

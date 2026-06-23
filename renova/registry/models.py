@@ -83,6 +83,22 @@ def _status_matches_value_constraint(name, value_field="value", status_field="re
     )
 
 
+class AppendOnlyQuerySet(models.QuerySet):
+    """Blocks `QuerySet.update()` from rewriting a model's declared write-once
+    fields. clean() guards the normal save path, but a bulk `.update()` skips
+    clean(); a model lists `IMMUTABLE_FIELDS` and this refuses to touch them.
+    (A raw SQL UPDATE still bypasses this — only a DB trigger covers that.)"""
+
+    def update(self, **kwargs):
+        protected = set(getattr(self.model, "IMMUTABLE_FIELDS", ())) & set(kwargs)
+        if protected:
+            raise ValueError(
+                f"{self.model.__name__}: {sorted(protected)} are append-only and "
+                "cannot be changed via .update()."
+            )
+        return super().update(**kwargs)
+
+
 DRUG_ANALYTE_CHOICES = [("tacrolimus", "Tacrolimus"), ("everolimus", "Everolimus")]
 # Slice 08 clinical-event vocabularies. Structured (choices), never free text, so a
 # mandated prophylaxis can never masquerade as a clinical response at analysis.
@@ -1216,6 +1232,9 @@ class ReferenceSet(models.Model):
     pinned_at = models.DateField(null=True, blank=True)
     history = HistoricalRecords()
 
+    IMMUTABLE_FIELDS = ("content_sha256",)
+    objects = AppendOnlyQuerySet.as_manager()
+
     def __str__(self):
         return f"ReferenceSet {self.name}"
 
@@ -1394,6 +1413,9 @@ class SangerDetail(models.Model):
         help_text="Editor of the reviewed consensus (attribution). Never exported.",
     )
     history = HistoricalRecords()
+
+    IMMUTABLE_FIELDS = ("raw_ab1_sha256", "raw_ab1_path")
+    objects = AppendOnlyQuerySet.as_manager()
 
     def __str__(self):
         return f"SangerDetail {self.raw_ab1_sha256[:8]}"
