@@ -1163,3 +1163,157 @@ def test_export_refuses_on_leaky_genotype_allele(db, tmp_path):
     with pytest.raises(CommandError):
         call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
     assert not (tmp_path / "v0.1").exists()
+
+
+# --- Slice 11: source attribution + genotype concordance export (AC5, AC6) ---
+
+
+def _geno_result_for(recipient, calls, tag):
+    """A GenotypingResult anchored (through the tube) to `recipient`, carrying the
+    given (locus, allele, sanger_call) calls. `tag` keeps usernames/SHAs unique."""
+    editor = User.objects.create_user(username=f"bio-{tag}")
+    v = RecipientVisit.objects.create(
+        recipient=recipient, timepoint_label="day_7", actual_visit_date=date(2025, 1, 15)
+    )
+    a = Aliquot.objects.create(
+        recipient_visit=v, matrix="plasma", collected_date=date(2025, 1, 15),
+        initial_volume_ul=Decimal("1000"),
+    )
+    run = PipelineRun.objects.create(input_manifest_sha256=(tag * 64)[:64])
+    res = GenotypingResult.objects.create(aliquot=a, pipeline_run=run, assay_type="sanger")
+    for locus, allele, sc in calls:
+        GenotypeCall.objects.create(
+            result=res, locus=locus, allele=allele, sanger_call=sc, entered_by=editor
+        )
+    return res
+
+
+@pytest.fixture
+def seeded_slice11(db):
+    """A confirmed donor-derived superinfection pair: a recipient with two
+    sequenced strains compared across a hypervariable (gN), a conserved (gB), and
+    a resistance (UL97) locus. The full Slice 11 export surface."""
+    reviewer = User.objects.create_user(username="adjudicator")
+    r = Recipient.objects.create(
+        subject_id="SCMVR07", date_of_birth=date(1980, 1, 1), sex="M",
+        kt_date=date(2025, 1, 1), donor_serostatus="POS", recipient_serostatus="NEG",
+    )
+    rec_res = _geno_result_for(
+        r, [("gN", "gN1", "R"), ("gB", "gB1", "R"), ("UL97", "wt", "R")], "1"
+    )
+    comp_res = _geno_result_for(r, [("gN", "gN1", "R"), ("gB", "gB1", "R")], "2")
+    ConcordancePair.objects.create(
+        recipient=r, recipient_result=rec_res, comparator_result=comp_res,
+        concordance_call="concordant", superinfection_status="confirmed",
+        reviewed_by=reviewer, reviewed_at=date(2025, 4, 1),
+    )
+    return r
+
+
+def test_export_writes_concordance_files(seeded_slice11, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    assert (out / "concordancepair.csv").exists()
+    assert (out / "concordancelocus.csv").exists()
+
+
+def test_export_concordance_pair_summary_is_de_identified(seeded_slice11, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    with (out / "concordancepair.csv").open(newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["recipient"] == "SCMVR07"  # pseudonym, not a real identity
+    assert row["concordance_call"] == "concordant"  # reviewer-set
+    assert row["suggested_concordance_call"] == "concordant"  # derived from the calls
+    assert row["co_resolved_count"] == "2"  # gN + gB; UL97 excluded
+    assert row["superinfection_status"] == "confirmed"
+    # no staff-name columns leak
+    assert "reviewed_by" not in row
+    assert "reviewed_at" not in row
+
+
+def test_export_concordance_locus_table_orders_and_labels_resistance(seeded_slice11, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    with (out / "concordancelocus.csv").open(newline="") as fh:
+        rows = [r for r in csv.DictReader(fh) if r["locus"]]  # drop blank separator row
+    loci = [r["locus"] for r in rows]
+    assert loci == ["gN", "gB", "UL97"]  # hypervariable -> conserved -> resistance-last
+    by_locus = {r["locus"]: r for r in rows}
+    # resistance locus carries the literal label and is not counted for strain identity
+    assert by_locus["UL97"]["strain_identity_note"] == "not counted for strain identity"
+    assert by_locus["UL97"]["counted_for_strain_identity"] == "false"
+    # strain-identity loci carry no note
+    assert by_locus["gN"]["strain_identity_note"] == ""
+    assert by_locus["gB"]["counted_for_strain_identity"] == "true"
+    # alleles are present and the recipient key is intact
+    assert by_locus["gN"]["allele_recipient"] == "gN1"
+    assert all(r["recipient"] == "SCMVR07" for r in rows)
+
+
+def test_export_concordance_locus_table_visually_separates_resistance(seeded_slice11, tmp_path):
+    """A blank separator row precedes the resistance block (AC5 'visually separated')."""
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    with (out / "concordancelocus.csv").open(newline="") as fh:
+        raw = list(csv.reader(fh))
+    # header + gN + gB + blank + UL97
+    blank_idx = [i for i, row in enumerate(raw) if row == []]
+    assert blank_idx  # at least one separator row
+    # the row immediately after the last separator is a resistance locus
+    after = raw[blank_idx[-1] + 1]
+    assert after[raw[0].index("locus")] == "UL97"
+
+
+def test_export_recipient_has_source_label(seeded_slice11, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    with (out / "recipient.csv").open(newline="") as fh:
+        row = list(csv.DictReader(fh))[0]
+    assert "source_label" in row
+    # a confirmed superinfection upgrades the source label to donor_derived (AC1/AC6)
+    assert row["source_label"] == "donor_derived"
+
+
+def test_export_recipient_source_label_blank_when_none(seeded, tmp_path):
+    """No attributable CMV event -> source_label is blank, not a fabricated value."""
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    with (out / "recipient.csv").open(newline="") as fh:
+        row = list(csv.DictReader(fh))[0]
+    assert row["source_label"] == ""
+
+
+def test_export_manifest_lists_concordance_files(seeded_slice11, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    manifest = json.loads((out / "manifest.json").read_text())
+    assert "concordancepair.csv" in manifest["files"]
+    assert "concordancelocus.csv" in manifest["files"]
+    assert manifest["files"]["concordancepair.csv"]["columns"]["recipient"] == "c"
+    assert manifest["files"]["concordancelocus.csv"]["columns"]["locus"] == "c"
+
+
+def test_export_slice11_leak_scan_over_concordance_files(seeded_slice11, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    for f in out.glob("*.csv"):
+        text = f.read_text()
+        assert "2025-04-01" not in text  # reviewed_at never a calendar date
+        assert "adjudicator" not in text  # reviewer staff name never exported
+        assert "1980-01-01" not in text  # dob
+
+
+def test_export_refuses_on_leaky_concordance_allele(db, tmp_path):
+    """A name-shaped allele flows into concordancelocus.csv; the de-id chokepoint
+    must refuse with nothing written (mirrors the genotypecall case)."""
+    r = Recipient.objects.create(
+        subject_id="SCMVR07", date_of_birth=date(1980, 1, 1), sex="M", kt_date=date(2025, 1, 1)
+    )
+    rec_res = _geno_result_for(r, [("gB", "Maria Santos", "R")], "1")
+    ConcordancePair.objects.create(recipient=r, recipient_result=rec_res)
+    with pytest.raises(CommandError):
+        call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    assert not (tmp_path / "v0.1").exists()
