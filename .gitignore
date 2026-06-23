@@ -23,3 +23,7 @@ docs/plans/
 cmv_grilling_session.md
 logs/
 .worktrees/
+
+# Ralph orchestrator configs — superseded by sandcastle, slated for Phase E removal.
+hats.yml
+ralph.yml
