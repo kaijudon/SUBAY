@@ -32,7 +32,9 @@ const CHANGES = "<promise>CHANGES</promise>";
 // once at sandbox creation (the repo is bind-mounted, so requirements.txt is there).
 const box = await createSandbox({
   branch,
-  sandbox: docker(),
+  // Docker's containerd image store only resolves fully-qualified refs; the bare
+  // name `sandcastle:renova_final` fails `docker image inspect`, so pin the full ref.
+  sandbox: docker({ imageName: "docker.io/library/sandcastle:renova_final" }),
   hooks: {
     sandbox: {
       onSandboxReady: [

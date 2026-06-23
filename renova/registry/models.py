@@ -893,6 +893,33 @@ class MedicationCourse(models.Model):
     )
     history = HistoricalRecords()
 
+    class Meta:
+        constraints = [
+            # DB mirror of _validate_course_type_fields(): the friendly clean()
+            # guard is bypassable by a bare .save()/.update(), so enforce the
+            # prophylaxis/treatment field separation at the DB too.
+            models.CheckConstraint(
+                name="medicationcourse_no_prophylaxis_fields_on_treatment",
+                condition=(
+                    ~models.Q(course_type="treatment")
+                    | models.Q(
+                        completed_per_protocol__isnull=True,
+                        early_discontinuation_reason="",
+                    )
+                ),
+            ),
+            models.CheckConstraint(
+                name="medicationcourse_no_treatment_fields_on_prophylaxis",
+                condition=(
+                    ~models.Q(course_type="prophylaxis")
+                    | models.Q(
+                        dose_reduction_count__isnull=True,
+                        dose_reduction_reason="",
+                    )
+                ),
+            ),
+        ]
+
     def __str__(self):
         return f"{self.recipient_id} {self.agent} ({self.course_type})"
 
@@ -1325,12 +1352,24 @@ class GenotypeCall(models.Model):
 
     def clean(self):
         super().clean()
-        if not self.is_locked:
-            return
-        if self.reviewed_by_id is None or self.reviewed_at is None:
-            raise ValidationError("A locked call requires reviewed_by and reviewed_at.")
-        if self.entered_by_id == self.reviewed_by_id:
-            raise ValidationError("The second reviewer must differ from the editor.")
+        if self.is_locked:
+            if self.reviewed_by_id is None or self.reviewed_at is None:
+                raise ValidationError("A locked call requires reviewed_by and reviewed_at.")
+            if self.entered_by_id == self.reviewed_by_id:
+                raise ValidationError("The second reviewer must differ from the editor.")
+        # Once locked, the call is frozen: its allele content cannot be edited
+        # (SangerDetail append-only precedent). Freeze keys off the STORED lock so
+        # an unlock-and-edit cannot slip a change through.
+        if self.pk is not None:
+            stored = GenotypeCall.objects.get(pk=self.pk)
+            if stored.is_locked and (
+                stored.locus != self.locus
+                or stored.allele != self.allele
+                or stored.sanger_call != self.sanger_call
+            ):
+                raise ValidationError(
+                    "A locked call is frozen; locus/allele/sanger_call cannot be changed."
+                )
 
 
 class SangerDetail(models.Model):
