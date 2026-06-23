@@ -38,8 +38,21 @@ from renova.registry.models import (
     GenotypeCall,
 )
 
-# A bare calendar date should never appear in any output file.
-DATE_RX = re.compile(r"\d{4}-\d{2}-\d{2}")
+# A bare calendar date should never appear in any output file. Day-offsets are
+# bare integers, so they never match. Covers ISO (2020-03-15), slash/dot/dash
+# numeric (03/15/2020, 15.03.2020, 3-15-20 — needs two separators, so a lone
+# decimal like 3.15 is safe), and written month-name dates (March 15 / 15 Mar).
+# This is fail-closed defense-in-depth: a false positive refuses the export for a
+# human to inspect, which is the safe direction for a de-id gate.
+DATE_RX = re.compile(
+    r"\d{4}-\d{2}-\d{2}"
+    r"|\b\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4}\b"
+    r"|\b(?:January|February|March|April|May|June|July|August|September|October|"
+    r"November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\.?\s+\d{1,2}\b"
+    r"|\b\d{1,2}\s+(?:January|February|March|April|May|June|July|August|September|"
+    r"October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\b",
+    re.IGNORECASE,
+)
 # Two consecutive Title-Case words — a plausible person name.
 NAME_RX = re.compile(r"\b[A-Z][a-z]+\s[A-Z][a-z]+\b")
 # An explicit MRN label followed by digits.
@@ -73,11 +86,13 @@ RECIPIENT_COLUMNS = [
     ("episode_count", "i"),
     ("person_time_days", "i"),
 ]
+# relation (free text, e.g. "sibling") is deliberately NOT exported: an
+# unconstrained CharField is a leak vector (a name/date could be typed in), and
+# donor_type already carries the analyzable living/deceased signal.
 DONOR_COLUMNS = [
     ("subject_id", "c"),
     ("sex", "c"),
     ("donor_type", "c"),
-    ("relation", "c"),
     ("baseline_serostatus", "c"),
 ]
 OTHERCONDITION_COLUMNS = [
@@ -174,8 +189,11 @@ EPISODE_COLUMNS = [
 
 # Recipient-level clinical events (Slice 08). All dates become day-offsets from
 # the recipient's kt_date; LOS/duration are integer day-counts (not dates).
-# reason (free text) is deliberately NOT exported (leak vector, mirrors
-# RecipientVisit.stretch_reference). disposition (enum) carries the signal.
+# Free-text reasons are deliberately NOT exported (leak vector, mirrors
+# RecipientVisit.stretch_reference): dose_reduction_reason is unconstrained text;
+# the structured signal (dose_reduction_count, change_direction, course_type,
+# disposition enum, and the choice-constrained early_discontinuation_reason)
+# carries the analyzable content.
 MEDICATIONCOURSE_COLUMNS = [
     ("id", "i"),
     ("recipient", "c"),
@@ -189,12 +207,14 @@ MEDICATIONCOURSE_COLUMNS = [
     ("end_day_offset", "i"),
     ("duration_days", "i"),  # derived day-count, never a date
     ("completed_per_protocol", "c"),
-    ("early_discontinuation_reason", "c"),
+    ("early_discontinuation_reason", "c"),  # choice-constrained enum, not free text
     ("dose_reduction_count", "i"),
-    ("dose_reduction_reason", "c"),
     ("change_direction", "c"),
     ("cmv_management_intent", "c"),
 ]
+# treatment (free text, e.g. "steroid pulse") is deliberately NOT exported: an
+# unconstrained CharField is a leak vector; rejection_type + banff_grade (enums)
+# carry the analyzable signal.
 REJECTIONEPISODE_COLUMNS = [
     ("id", "i"),
     ("recipient", "c"),
@@ -203,7 +223,6 @@ REJECTIONEPISODE_COLUMNS = [
     ("banff_grade", "c"),
     ("biopsy_proven", "c"),
     ("biopsy_day_offset", "i"),
-    ("treatment", "c"),
     ("resolved_day_offset", "i"),
 ]
 HOSPITALIZATION_COLUMNS = [
@@ -354,7 +373,7 @@ class Command(BaseCommand):
             w.writerow([name for name, _ in DONOR_COLUMNS])
             for d in Donor.objects.order_by("pk"):
                 w.writerow(
-                    [d.subject_id, d.sex, d.donor_type or "", d.relation or "",
+                    [d.subject_id, d.sex, d.donor_type or "",
                      d.baseline_serostatus or ""]
                 )
 
@@ -514,7 +533,7 @@ class Command(BaseCommand):
                     _offset(c.start_date, kt), end_off, dur,
                     _bool3(c.completed_per_protocol), c.early_discontinuation_reason,
                     c.dose_reduction_count if c.dose_reduction_count is not None else "",
-                    c.dose_reduction_reason, c.change_direction,
+                    c.change_direction,
                     _bool3(c.cmv_management_intent),
                 ])
 
@@ -530,7 +549,7 @@ class Command(BaseCommand):
                 w.writerow([
                     e.id, e.recipient.subject_id, _offset(e.onset_date, kt),
                     e.rejection_type, e.banff_grade, _bool3(e.biopsy_proven),
-                    biopsy_off, e.treatment, resolved_off,
+                    biopsy_off, resolved_off,
                 ])
 
     def _write_hospitalizations(self, base):
