@@ -18,6 +18,12 @@ from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
 
+from renova.registry.attribution import (
+    STRAIN_IDENTITY_NOTE,
+    counted_for_strain_identity,
+    is_resistance,
+    locus_order,
+)
 # Ordered as handle() writes them (recipients → donors → visits → labs).
 from renova.registry.models import (
     Recipient,
@@ -36,6 +42,7 @@ from renova.registry.models import (
     Aliquot,
     GenotypingResult,
     GenotypeCall,
+    ConcordancePair,
 )
 
 # A bare calendar date should never appear in any output file. Day-offsets are
@@ -85,6 +92,10 @@ RECIPIENT_COLUMNS = [
     ("time_to_first_episode_censored", "c"),
     ("episode_count", "i"),
     ("person_time_days", "i"),
+    # Flat source label by the locked priority donor-derived > primary >
+    # reactivation (Slice 11, AC1/AC6). Derived @property; blank when no CMV event
+    # is attributable. Never stored, so it can't drift from the inputs.
+    ("source_label", "c"),
 ]
 # relation (free text, e.g. "sibling") is deliberately NOT exported: an
 # unconstrained CharField is a leak vector (a name/date could be typed in), and
@@ -278,6 +289,38 @@ GENOTYPECALL_COLUMNS = [
 ]
 
 
+# Source attribution & genotype concordance (Slice 11). The compact per-pair
+# summary carries the reviewer's call alongside the DERIVED suggestion + co-resolved
+# count (so the grading reproduces from the stored calls) under de-identified pair
+# IDs. reviewed_by/reviewed_at (staff attribution) and the raw GenotypingResult pks
+# (which would re-expose the sample date through the tube) are NEVER exported — the
+# recipient subject_id pseudonym is the only identity that leaves.
+CONCORDANCEPAIR_COLUMNS = [
+    ("id", "i"),
+    ("recipient", "c"),
+    ("concordance_call", "c"),  # reviewer-set tier (blank if not yet adjudicated)
+    ("suggested_concordance_call", "c"),  # derived from the calls, never stored
+    ("co_resolved_count", "i"),
+    ("superinfection_status", "c"),
+]
+# The long per-pair × locus allele table (AC5): one row per pair × locus, ordered
+# hypervariable-first → conserved → resistance-last. The resistance loci (UL97,
+# UL54) are visually separated by a blank row and carry the literal
+# STRAIN_IDENTITY_NOTE so they read as excluded from strain identity. Allele sets
+# are the de-identified call codes only (sorted, ";"-joined for a mixed infection).
+CONCORDANCELOCUS_COLUMNS = [
+    ("pair", "i"),
+    ("recipient", "c"),
+    ("locus", "c"),
+    ("allele_recipient", "c"),
+    ("allele_comparator", "c"),
+    ("resolved_recipient", "c"),
+    ("resolved_comparator", "c"),
+    ("counted_for_strain_identity", "c"),
+    ("strain_identity_note", "c"),  # STRAIN_IDENTITY_NOTE for resistance loci, else blank
+]
+
+
 def _offset(d, kt_date):
     """Integer days from transplant (day 0). Negative for pre-KT dates."""
     return (d - kt_date).days
@@ -325,6 +368,8 @@ class Command(BaseCommand):
             self._write_aliquots(staging)
             self._write_genotyping_results(staging)
             self._write_genotype_calls(staging)
+            self._write_concordance_pairs(staging)
+            self._write_concordance_loci(staging)
             self._write_manifest(staging, version)
             self._assert_no_identifier_leak(staging)
         except Exception:
@@ -365,6 +410,7 @@ class Command(BaseCommand):
                      _bool3(r.sequencing_included),
                      r.pre_kt_igg_serostatus or ""]
                     + self._episode_summary_row(s)
+                    + [r.source_label or ""]
                 )
 
     def _write_donors(self, base):
@@ -618,6 +664,49 @@ class Command(BaseCommand):
                 # exported — only the de-identified call codes leave.
                 w.writerow([c.id, c.result_id, c.locus, c.allele, c.sanger_call or ""])
 
+    def _write_concordance_pairs(self, base):
+        with (base / "concordancepair.csv").open("w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow([name for name, _ in CONCORDANCEPAIR_COLUMNS])
+            qs = ConcordancePair.objects.select_related("recipient").order_by("pk")
+            for p in qs:
+                # suggested_concordance_call / co_resolved_count are derived at read
+                # from the stored calls (the pure grader) so the export reproduces.
+                # reviewed_by/reviewed_at (staff attribution) are never exported.
+                w.writerow([
+                    p.id, p.recipient.subject_id, p.concordance_call,
+                    p.suggested_concordance_call, p.co_resolved_count,
+                    p.superinfection_status,
+                ])
+
+    def _write_concordance_loci(self, base):
+        with (base / "concordancelocus.csv").open("w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow([name for name, _ in CONCORDANCELOCUS_COLUMNS])
+            qs = ConcordancePair.objects.select_related("recipient").order_by("pk")
+            for p in qs:
+                subject_id = p.recipient.subject_id
+                # hypervariable-first → conserved → resistance-last, then by name.
+                comparisons = sorted(
+                    p.locus_comparisons(),
+                    key=lambda c: (locus_order(c["locus"]), c["locus"]),
+                )
+                resistance_block_started = False
+                for c in comparisons:
+                    locus = c["locus"]
+                    # A blank separator row precedes the resistance block (AC5).
+                    if is_resistance(locus) and not resistance_block_started:
+                        w.writerow([])
+                        resistance_block_started = True
+                    w.writerow([
+                        p.id, subject_id, locus,
+                        ";".join(sorted(c["allele_a_set"])),
+                        ";".join(sorted(c["allele_b_set"])),
+                        _bool3(c["resolved_a"]), _bool3(c["resolved_b"]),
+                        _bool3(counted_for_strain_identity(locus)),
+                        STRAIN_IDENTITY_NOTE if is_resistance(locus) else "",
+                    ])
+
     def _write_manifest(self, base, version):
         specs = {
             "recipient.csv": RECIPIENT_COLUMNS,
@@ -637,6 +726,8 @@ class Command(BaseCommand):
             "aliquot.csv": ALIQUOT_COLUMNS,
             "genotypingresult.csv": GENOTYPINGRESULT_COLUMNS,
             "genotypecall.csv": GENOTYPECALL_COLUMNS,
+            "concordancepair.csv": CONCORDANCEPAIR_COLUMNS,
+            "concordancelocus.csv": CONCORDANCELOCUS_COLUMNS,
         }
         files = {}
         for name, columns in specs.items():
