@@ -743,7 +743,10 @@ class Command(BaseCommand):
         (base / "manifest.json").write_text(json.dumps(manifest, indent=2))
 
     def _assert_no_identifier_leak(self, staging):
-        for path in sorted(staging.glob("*.csv")):
+        # Scan the CSVs AND manifest.json: today the manifest holds only version,
+        # hashes, and column type codes, but a future slice writing a label/path
+        # into it must not slip an identifier past the gate.
+        for path in sorted(staging.glob("*.csv")) + [staging / "manifest.json"]:
             text = path.read_text()
             for rx in (DATE_RX, NAME_RX, MRN_RX, ADDRESS_RX):
                 if rx.search(text):

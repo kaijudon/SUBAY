@@ -177,6 +177,18 @@ def test_export_refuses_on_seeded_identifier(leaky_subject_id, db, tmp_path):
     assert list(tmp_path.glob(".v0.1.staging-*")) == []
 
 
+def test_leak_scan_covers_manifest_json(tmp_path):
+    """The leak sweep scans manifest.json too — a future slice that writes a
+    label/path into the manifest must not slip an identifier past the gate."""
+    from renova.registry.management.commands.export_analysis_set import Command
+
+    (tmp_path / "manifest.json").write_text(
+        json.dumps({"version": "v0.1", "files": {}, "note": "MRN-445566"})
+    )
+    with pytest.raises(CommandError):
+        Command()._assert_no_identifier_leak(tmp_path)
+
+
 # --- Slice 02: baseline + derived values flow through the de-id export ---
 
 
