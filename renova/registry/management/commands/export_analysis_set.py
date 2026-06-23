@@ -34,6 +34,8 @@ from renova.registry.models import (
     RejectionEpisode,
     Hospitalization,
     Aliquot,
+    GenotypingResult,
+    GenotypeCall,
 )
 
 # A bare calendar date should never appear in any output file.
@@ -234,6 +236,29 @@ ALIQUOT_COLUMNS = [
 ]
 
 
+# Genotyping ingest (Slice 10). subject and sample-date are DERIVED through the
+# tube (the slice-09 custody chain); the sample date leaves only as a day-offset
+# from the recipient's kt_date (blank when the source aliquot has no visit anchor,
+# the donor/aliquot precedent). Deliberately NOT exported (leak vectors): raw
+# `.ab1` paths / SHAs / stored file names, consensus sequences, editor/reviewer
+# names, and every process timestamp (started_at/completed_at/reviewed_at). The
+# qpcr_rollup (single/mixed/untyped) is the materialized derived per-result roll-up.
+GENOTYPINGRESULT_COLUMNS = [
+    ("id", "i"),
+    ("subject", "c"),
+    ("assay_type", "c"),
+    ("sample_day_offset", "i"),
+    ("qpcr_rollup", "c"),  # single/mixed/untyped; blank for a Sanger result
+]
+GENOTYPECALL_COLUMNS = [
+    ("id", "i"),
+    ("result", "i"),
+    ("locus", "c"),
+    ("allele", "c"),
+    ("sanger_call", "c"),  # R/F/N; blank for a qPCR-derived call
+]
+
+
 def _offset(d, kt_date):
     """Integer days from transplant (day 0). Negative for pre-KT dates."""
     return (d - kt_date).days
@@ -279,6 +304,8 @@ class Command(BaseCommand):
             self._write_rejectionepisodes(staging)
             self._write_hospitalizations(staging)
             self._write_aliquots(staging)
+            self._write_genotyping_results(staging)
+            self._write_genotype_calls(staging)
             self._write_manifest(staging, version)
             self._assert_no_identifier_leak(staging)
         except Exception:
@@ -545,6 +572,33 @@ class Command(BaseCommand):
                     str(a.initial_volume_ul), str(a.remaining_ul), a.thaw_count,
                 ])
 
+    def _write_genotyping_results(self, base):
+        with (base / "genotypingresult.csv").open("w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow([name for name, _ in GENOTYPINGRESULT_COLUMNS])
+            qs = GenotypingResult.objects.select_related(
+                "aliquot__recipient_visit__recipient"
+            ).order_by("pk")
+            for g in qs:
+                # subject + sample date are derived THROUGH the tube; the date only
+                # ever leaves as an offset (blank when the straw has no kt anchor).
+                recipient = g.subject
+                if recipient is not None:
+                    subject_cell = recipient.subject_id
+                    offset = _offset(g.sample_date, recipient.kt_date)
+                else:
+                    subject_cell, offset = "", ""
+                w.writerow([g.id, subject_cell, g.assay_type, offset, g.qpcr_rollup])
+
+    def _write_genotype_calls(self, base):
+        with (base / "genotypecall.csv").open("w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow([name for name, _ in GENOTYPECALL_COLUMNS])
+            for c in GenotypeCall.objects.order_by("pk"):
+                # entered_by/reviewed_by (staff names) and is_locked are never
+                # exported — only the de-identified call codes leave.
+                w.writerow([c.id, c.result_id, c.locus, c.allele, c.sanger_call or ""])
+
     def _write_manifest(self, base, version):
         specs = {
             "recipient.csv": RECIPIENT_COLUMNS,
@@ -562,6 +616,8 @@ class Command(BaseCommand):
             "rejectionepisode.csv": REJECTIONEPISODE_COLUMNS,
             "hospitalization.csv": HOSPITALIZATION_COLUMNS,
             "aliquot.csv": ALIQUOT_COLUMNS,
+            "genotypingresult.csv": GENOTYPINGRESULT_COLUMNS,
+            "genotypecall.csv": GENOTYPECALL_COLUMNS,
         }
         files = {}
         for name, columns in specs.items():

@@ -81,3 +81,9 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Genotyping ingest stores content-addressed files (named by SHA-256) here. The
+# "encrypted volume" requirement is an at-rest/ops concern (DEC-020): the code
+# targets MEDIA_ROOT and the deployment mounts it on an encrypted volume — no
+# crypto Python dependency is added (no-new-dep rule, DEC-002 lineage).
+MEDIA_ROOT = env("MEDIA_ROOT", default=str(BASE_DIR / "media"))
