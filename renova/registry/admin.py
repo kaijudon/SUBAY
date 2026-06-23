@@ -10,14 +10,21 @@ from .models import (
     Donor,
     DonorVisit,
     DrugLevel,
+    GenotypeCall,
+    GenotypingResult,
     Hospitalization,
     MedicationCourse,
     OtherCondition,
     PipelineRun,
+    QpcrDetail,
+    QpcrProbeReading,
     Recipient,
     RecipientVisit,
+    ReferenceAccession,
+    ReferenceSet,
     RejectionEpisode,
     RenalFunction,
+    SangerDetail,
     SequencingAliquot,
     TBNKPanel,
     ThawEvent,
@@ -260,4 +267,80 @@ class SequencingAliquotAdmin(SimpleHistoryAdmin):
 
 @admin.register(PipelineRun)
 class PipelineRunAdmin(SimpleHistoryAdmin):
-    list_display = ("id",)
+    list_display = ("id", "input_manifest_sha256", "reference_set", "started_at", "completed_at")
+
+
+# --- Slice 10: genotyping ingest (provenance; second-reviewer lock) ---
+
+
+class GenotypeCallInline(admin.TabularInline):
+    model = GenotypeCall
+    extra = 0
+
+
+class SangerDetailInline(admin.TabularInline):
+    model = SangerDetail
+    extra = 0
+
+
+class QpcrDetailInline(admin.TabularInline):
+    model = QpcrDetail
+    extra = 0
+
+
+class QpcrProbeReadingInline(admin.TabularInline):
+    model = QpcrProbeReading
+    extra = 0
+
+
+class ReferenceAccessionInline(admin.TabularInline):
+    model = ReferenceAccession
+    extra = 0
+
+
+@admin.register(GenotypingResult)
+class GenotypingResultAdmin(SimpleHistoryAdmin):
+    list_display = ("id", "aliquot", "pipeline_run", "assay_type", "subject", "sample_date")
+    readonly_fields = ("subject", "sample_date", "qpcr_rollup")  # derived through the tube
+    inlines = [GenotypeCallInline, SangerDetailInline, QpcrDetailInline]
+
+
+class _EditorDefaultedAdmin(SimpleHistoryAdmin):
+    """Defaults `entered_by` to the acting user on add (no bespoke role code —
+    the different-user lock is enforced in the model, reusing the existing groups)."""
+
+    def save_model(self, request, obj, form, change):
+        if not change and obj.entered_by_id is None:
+            obj.entered_by = request.user
+        super().save_model(request, obj, form, change)
+
+
+@admin.register(GenotypeCall)
+class GenotypeCallAdmin(_EditorDefaultedAdmin):
+    list_display = (
+        "id", "result", "locus", "allele", "sanger_call", "entered_by",
+        "reviewed_by", "is_locked",
+    )
+
+
+@admin.register(QpcrProbeReading)
+class QpcrProbeReadingAdmin(_EditorDefaultedAdmin):
+    list_display = ("id", "qpcr_detail", "probe", "call", "entered_by", "reviewed_by")
+
+
+@admin.register(QpcrDetail)
+class QpcrDetailAdmin(SimpleHistoryAdmin):
+    list_display = ("id", "result", "rollup")
+    readonly_fields = ("rollup",)  # derived from the probe readings
+    inlines = [QpcrProbeReadingInline]
+
+
+@admin.register(SangerDetail)
+class SangerDetailAdmin(SimpleHistoryAdmin):
+    list_display = ("id", "result", "raw_ab1_sha256", "edited_by")
+
+
+@admin.register(ReferenceSet)
+class ReferenceSetAdmin(SimpleHistoryAdmin):
+    list_display = ("id", "name", "content_sha256", "pinned_at")
+    inlines = [ReferenceAccessionInline]

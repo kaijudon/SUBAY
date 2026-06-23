@@ -5,6 +5,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from django.contrib.auth.models import User
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
@@ -17,9 +18,12 @@ from renova.registry.models import (
     Donor,
     DonorVisit,
     DrugLevel,
+    GenotypeCall,
+    GenotypingResult,
     Hospitalization,
     MedicationCourse,
     OtherCondition,
+    PipelineRun,
     Recipient,
     RecipientVisit,
     RejectionEpisode,
@@ -87,6 +91,8 @@ def test_export_produces_one_csv_per_model_with_keys_intact(seeded, tmp_path):
         "rejectionepisode.csv",
         "hospitalization.csv",
         "aliquot.csv",
+        "genotypingresult.csv",
+        "genotypecall.csv",
         "manifest.json",
     }
 
@@ -1005,6 +1011,105 @@ def test_export_refuses_on_leaky_aliquot_matrix(db, tmp_path):
     )
     a.matrix = "Maria Santos"  # name-shaped leak into an exported column
     a.save()  # bypass clean()
+    with pytest.raises(CommandError):
+        call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    assert not (tmp_path / "v0.1").exists()
+
+
+# --- Slice 10: genotyping export (day-offsets only; no calendar date / identifier) ---
+
+
+@pytest.fixture
+def seeded_genotyping(db):
+    """A visit-anchored aliquot with a Sanger genotyping result and two allele
+    calls (a mixed gB1/gB3 infection), plus a SHA-pinned reference set — the full
+    Slice 10 export surface for the leak scan."""
+    editor = User.objects.create_user(username="bioinformatician")
+    r = Recipient.objects.create(
+        subject_id="SCMVR07", date_of_birth=date(1980, 1, 1), sex="M", kt_date=date(2025, 1, 1)
+    )
+    v = RecipientVisit.objects.create(
+        recipient=r, timepoint_label="day_7", actual_visit_date=date(2025, 1, 15)
+    )
+    a = Aliquot.objects.create(
+        recipient_visit=v, matrix="plasma", collected_date=date(2025, 1, 15),
+        initial_volume_ul=Decimal("1000"),
+    )
+    run = PipelineRun.objects.create(
+        input_manifest_sha256="a" * 64, started_at=date(2025, 2, 1), completed_at=date(2025, 2, 2)
+    )
+    res = GenotypingResult.objects.create(aliquot=a, pipeline_run=run, assay_type="sanger")
+    GenotypeCall.objects.create(result=res, locus="gB", allele="gB1", sanger_call="R", entered_by=editor)
+    GenotypeCall.objects.create(result=res, locus="gB", allele="gB3", sanger_call="R", entered_by=editor)
+    return r
+
+
+def test_export_writes_genotyping_files(seeded_genotyping, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    assert (out / "genotypingresult.csv").exists()
+    assert (out / "genotypecall.csv").exists()
+
+
+def test_export_genotyping_result_is_day_offset(seeded_genotyping, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    with (out / "genotypingresult.csv").open(newline="") as fh:
+        row = list(csv.DictReader(fh))[0]
+    assert row["subject"] == "SCMVR07"  # opaque pseudonym only
+    assert row["assay_type"] == "sanger"
+    assert row["sample_day_offset"] == "14"  # 2025-01-15 is 14 days after kt day 0
+
+
+def test_export_genotype_calls_are_long_one_row_per_allele(seeded_genotyping, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    with (out / "genotypecall.csv").open(newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    assert len(rows) == 2  # mixed infection = two rows
+    assert {r["allele"] for r in rows} == {"gB1", "gB3"}
+    assert all(r["sanger_call"] == "R" for r in rows)
+
+
+def test_export_genotyping_no_calendar_date_or_identifier(seeded_genotyping, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    for f in out.glob("*.csv"):
+        text = f.read_text()
+        assert "2025-01-15" not in text  # sample date never a calendar date
+        assert "2025-02-01" not in text  # pipeline started_at never leaves
+        assert "2025-02-02" not in text  # pipeline completed_at never leaves
+        assert "reviewer" not in text.lower()  # no staff-name columns
+    gr = (out / "genotypingresult.csv").read_text()
+    assert "sample_day_offset" in gr  # offsets, not dates
+    assert "raw_ab1" not in gr and "sha256" not in gr  # no file SHAs / paths
+
+
+def test_export_genotyping_manifest_lists_files(seeded_genotyping, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    manifest = json.loads((out / "manifest.json").read_text())
+    assert "genotypingresult.csv" in manifest["files"]
+    assert "genotypecall.csv" in manifest["files"]
+
+
+def test_export_refuses_on_leaky_genotype_allele(db, tmp_path):
+    """A name-shaped value in an exported genotype column triggers refusal with
+    nothing written (the chokepoint stays intact)."""
+    editor = User.objects.create_user(username="bioinformatician")
+    r = Recipient.objects.create(
+        subject_id="SCMVR07", date_of_birth=date(1980, 1, 1), sex="M", kt_date=date(2025, 1, 1)
+    )
+    v = RecipientVisit.objects.create(
+        recipient=r, timepoint_label="day_7", actual_visit_date=date(2025, 1, 15)
+    )
+    a = Aliquot.objects.create(
+        recipient_visit=v, matrix="plasma", collected_date=date(2025, 1, 15),
+        initial_volume_ul=Decimal("1000"),
+    )
+    run = PipelineRun.objects.create(input_manifest_sha256="a" * 64)
+    res = GenotypingResult.objects.create(aliquot=a, pipeline_run=run, assay_type="sanger")
+    GenotypeCall.objects.create(result=res, locus="gB", allele="Maria Santos", entered_by=editor)
     with pytest.raises(CommandError):
         call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
     assert not (tmp_path / "v0.1").exists()

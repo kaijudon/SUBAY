@@ -431,3 +431,49 @@ Template (one entry per consequential decision, IDs sequential — DEC-001, DEC-
   slice function; no semantic/behavior change, fully covered by existing `test_export.py`
   recipient-row assertions.
 - Timestamp (UTC ISO 8601): 2026-06-22T09:15:00Z
+
+## DEC-019 — GenotypingResult.cmv_episode_anchor FK target
+- Decision: US-49 asks for an "optional CMV-episode FK" on GenotypingResult, but
+  slice-07 episodes are DERIVED NamedTuples with no stored row to FK to (DEC-017).
+  Pick the FK target.
+- Chosen Option: `GenotypingResult.cmv_episode_anchor -> CMVQuantitative`
+  (the recipient-anchored, dated positive viral-load draw), null/blank=True,
+  on_delete=SET_NULL — exactly the anchor DEC-017 chose for
+  Hospitalization.cmv_attribution.
+- Confidence (0-100): 70
+- Alternatives Considered:
+  1. Add a stored CMVEpisode table to FK to — rejected: slice-07 locked episodes as
+     derive-at-read; persisting them now contradicts that constraint and this card's
+     scope (the exact situation DEC-017 already resolved).
+  2. Drop the FK entirely — rejected: the card explicitly lists an optional
+     CMV-episode FK enabling within-patient genotype-over-time analysis.
+- Reasoning: CMVQuantitative is the only stored, recipient-anchored, dated
+  CMV-event evidence; anchoring to it makes the genotype-over-time join possible
+  today without contradicting the derive-at-read lock. Optional (Slice 07 is listed
+  Optional), so its absence never blocks.
+- Reversibility: Medium — if a future slice persists a real CMVEpisode table the FK
+  can be repointed behind a migration; nullable so existing rows are unaffected.
+- Timestamp (UTC ISO 8601): 2026-06-23T00:00:00Z
+
+## DEC-020 — "Encrypted MEDIA_ROOT" satisfied by an ops-mounted volume; files content-addressed
+- Decision: US-56 requires genotyping files copied to "the encrypted MEDIA_ROOT".
+  Decide how to satisfy "encrypted" without adding a crypto dependency.
+- Chosen Option: Add `MEDIA_ROOT = env("MEDIA_ROOT", default=BASE_DIR/"media")` to
+  settings; `ingest_genotyping` stores each raw file content-addressed (name ==
+  SHA-256, skip-if-exists dedup) under MEDIA_ROOT. At-rest encryption is an
+  ops/mount concern: the deployment mounts MEDIA_ROOT on an encrypted volume. No
+  crypto Python dependency is added.
+- Confidence (0-100): 75
+- Alternatives Considered:
+  1. Add a Python encryption library and encrypt files in app code — rejected:
+     violates the slice's no-new-dependency rule (DEC-002 lineage) and Simplicity
+     First; encryption-at-rest is better handled by the storage layer.
+  2. Hardcode an absolute path — rejected: not environment-portable; the env knob
+     mirrors the existing DATABASE_URL/SECRET_KEY convention.
+- Reasoning: Content-addressing makes names self-verifying and idempotent (US-56
+  dedup), the load-bearing application requirement; the "encrypted" qualifier is a
+  deployment property the code cannot and should not own. Flagged so a reviewer can
+  confirm the production mount is encrypted.
+- Reversibility: High — additive setting; an app-layer encryption strategy could be
+  layered on later without changing the content-addressed storage contract.
+- Timestamp (UTC ISO 8601): 2026-06-23T00:00:00Z
