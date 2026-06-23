@@ -8,6 +8,7 @@ value can never silently disagree.
 from datetime import date, timedelta
 from decimal import Decimal
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from simple_history.models import HistoricalRecords
@@ -112,6 +113,13 @@ MATRIX_CHOICES = [
 # choices can never drift from the tiers the episode logic ranks.
 SEVERITY_TIER_CHOICES = [(t, t.capitalize()) for t in SEVERITY_TIERS]
 VISIT_SHIFT_CAP_DAYS = 3
+# Slice 10 genotyping vocabularies — LOCKED, structured (never free text) so a
+# call code can't drift. Sanger loci carry R/F/N (Resolved / Failed-QC /
+# No-amplicon); qPCR per-probe readings carry P/N/I (Positive / Negative /
+# Indeterminate) and roll up to single / mixed / untyped.
+ASSAY_TYPE_CHOICES = [("sanger", "Sanger"), ("qpcr", "qPCR")]
+SANGER_CALL_CHOICES = [("R", "Resolved"), ("F", "Failed-QC"), ("N", "No-amplicon")]
+QPCR_PROBE_CHOICES = [("P", "Positive"), ("N", "Negative"), ("I", "Indeterminate")]
 
 
 def _age_at(subject, ref_date):
@@ -960,11 +968,33 @@ class Hospitalization(models.Model):
 
 
 class PipelineRun(models.Model):
-    """Slice-09 STUB closing the tube→analysis custody chain. Minimal placeholder
-    (id + history only) so `ConsumptionEvent.pipeline_run` is a real nullable FK
-    today; slice 10 (genotyping ingest) fleshes it out with real columns via its
-    own migration and sets the FK from `ingest_genotyping`."""
+    """One genotyping pipeline run — the system-of-record for a manual
+    BioEdit/BLASTn/MAFFT analysis (provenance, not orchestration). Fleshed out in
+    slice 10 from the slice-09 stub. `input_manifest_sha256` is the idempotency
+    key: `ingest_genotyping` reuses an existing run rather than duplicating it.
+    `started_at`/`completed_at` are pipeline-process dates, NEVER subject calendar
+    dates and structurally outside every export `*_COLUMNS` list."""
 
+    reference_set = models.ForeignKey(
+        "ReferenceSet",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="pipeline_runs",
+        help_text="SHA-pinned GenBank reference set used for BLASTn assignment.",
+    )
+    started_at = models.DateField(null=True, blank=True)
+    completed_at = models.DateField(null=True, blank=True)
+    input_manifest_sha256 = models.CharField(
+        max_length=64,
+        null=True,
+        blank=True,
+        unique=True,
+        help_text="SHA-256 of the input manifest — the idempotency key.",
+    )
+    tool_versions = models.TextField(
+        blank=True, default="", help_text="Free-text tool/version provenance. Never exported."
+    )
     history = HistoricalRecords()
 
     def __str__(self):
@@ -1099,3 +1129,265 @@ class SequencingAliquot(models.Model):
 
     def __str__(self):
         return f"SequencingAliquot for aliquot {self.aliquot_id}"
+
+
+# --- Slice 10: genotyping ingest (provenance, not orchestration) ---
+
+
+class ReferenceSet(models.Model):
+    """The frozen GenBank reference accession set (e.g. Ross 2020), SHA-pinned so
+    BLASTn assignment is reproducible. `content_sha256` is immutable once stored —
+    re-pinning the same content is idempotent; tampering changes the SHA and is
+    detectable (mirror the append-only precedent at ThawEvent)."""
+
+    name = models.CharField(max_length=120, unique=True)
+    citation = models.CharField(max_length=240, blank=True, default="")
+    content_sha256 = models.CharField(
+        max_length=64, unique=True, help_text="SHA-256 over the frozen accession set."
+    )
+    pinned_at = models.DateField(null=True, blank=True)
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return f"ReferenceSet {self.name}"
+
+    def clean(self):
+        super().clean()
+        if self.pk is not None:
+            stored = ReferenceSet.objects.get(pk=self.pk)
+            if stored.content_sha256 != self.content_sha256:
+                raise ValidationError("content_sha256 is immutable once pinned.")
+
+
+class ReferenceAccession(models.Model):
+    """One GenBank accession within a pinned reference set, mapped to its genotype."""
+
+    reference_set = models.ForeignKey(
+        ReferenceSet, on_delete=models.CASCADE, related_name="accessions"
+    )
+    accession = models.CharField(max_length=32)
+    genotype = models.CharField(max_length=32)
+    history = HistoricalRecords()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                name="referenceaccession_unique_per_set",
+                fields=["reference_set", "accession"],
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.accession} ({self.genotype})"
+
+
+class GenotypingResult(models.Model):
+    """One genotyping result anchored to the source `Aliquot` — subject and
+    sample-date are DERIVED through the tube (never stored on the result),
+    preserving the slice-09 custody chain (derive-don't-store). The optional
+    `cmv_episode_anchor` FK targets the recipient-anchored dated viral-load draw
+    (DEC-019, the DEC-017 precedent) so within-patient genotype-over-time analysis
+    is joinable without contradicting slice-07's derive-at-read episodes."""
+
+    aliquot = models.ForeignKey(
+        Aliquot, on_delete=models.PROTECT, related_name="genotyping_results"
+    )
+    pipeline_run = models.ForeignKey(
+        PipelineRun, on_delete=models.PROTECT, related_name="genotyping_results"
+    )
+    cmv_episode_anchor = models.ForeignKey(
+        CMVQuantitative,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="genotyping_results",
+        help_text="Optional anchor to a dated positive QNAT draw (DEC-019).",
+    )
+    assay_type = models.CharField(max_length=8, choices=ASSAY_TYPE_CHOICES)
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return f"GenotypingResult {self.pk} ({self.assay_type})"
+
+    @property
+    def subject(self):
+        """Recipient derived THROUGH the tube — never a stored column. None when
+        the source aliquot has no visit anchor."""
+        visit = self.aliquot.recipient_visit
+        return visit.recipient if visit is not None else None
+
+    @property
+    def sample_date(self):
+        """Sample date derived through the tube (the aliquot's collection date)."""
+        return self.aliquot.collected_date
+
+    @property
+    def qpcr_rollup(self):
+        """single / mixed / untyped rolled up from the qPCR probe readings; blank
+        for a Sanger result with no qPCR detail."""
+        detail = self.qpcr_details.first()
+        return detail.rollup if detail is not None else ""
+
+
+class GenotypeCall(models.Model):
+    """One allele call, stored LONG (first normal form) — a mixed infection is
+    multiple rows for the same result/locus, never collapsed by a unique
+    constraint. No call is finalized (`is_locked`) without a second-reviewer lock
+    set by a DIFFERENT user, enforced at BOTH the app layer (clean()) and the DB
+    layer (two CheckConstraints), mirroring the ConsumptionEvent dual-guard."""
+
+    result = models.ForeignKey(
+        GenotypingResult, on_delete=models.CASCADE, related_name="calls"
+    )
+    locus = models.CharField(max_length=16)
+    allele = models.CharField(max_length=32)
+    sanger_call = models.CharField(
+        max_length=1, choices=SANGER_CALL_CHOICES, null=True, blank=True,
+        help_text="Sanger R/F/N taxonomy; null for a qPCR-derived call.",
+    )
+    entered_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="genotype_calls_entered",
+    )
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="genotype_calls_reviewed",
+    )
+    reviewed_at = models.DateField(null=True, blank=True)
+    is_locked = models.BooleanField(default=False)
+    history = HistoricalRecords()
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                name="genotypecall_locked_requires_reviewer",
+                condition=(
+                    models.Q(is_locked=False)
+                    | models.Q(reviewed_by__isnull=False, reviewed_at__isnull=False)
+                ),
+            ),
+            models.CheckConstraint(
+                name="genotypecall_reviewer_differs_when_locked",
+                condition=(
+                    models.Q(is_locked=False)
+                    | ~models.Q(reviewed_by=models.F("entered_by"))
+                ),
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.locus}={self.allele}"
+
+    def clean(self):
+        super().clean()
+        if not self.is_locked:
+            return
+        if self.reviewed_by_id is None or self.reviewed_at is None:
+            raise ValidationError("A locked call requires reviewed_by and reviewed_at.")
+        if self.entered_by_id == self.reviewed_by_id:
+            raise ValidationError("The second reviewer must differ from the editor.")
+
+
+class SangerDetail(models.Model):
+    """Append-only raw `.ab1` reference (unique by content SHA-256, never
+    overwritten) plus the reviewed consensus attributed to its editor. The raw
+    reference is write-once: a unique constraint blocks a second row for the same
+    SHA, and clean() refuses to mutate an existing raw reference (ThawEvent
+    single-use precedent)."""
+
+    result = models.ForeignKey(
+        GenotypingResult, on_delete=models.CASCADE, related_name="sanger_details"
+    )
+    raw_ab1_sha256 = models.CharField(max_length=64, unique=True)
+    raw_ab1_path = models.CharField(max_length=255)
+    consensus_sequence = models.TextField(blank=True, default="")
+    edited_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="sanger_consensus_edits",
+        help_text="Editor of the reviewed consensus (attribution). Never exported.",
+    )
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return f"SangerDetail {self.raw_ab1_sha256[:8]}"
+
+    def clean(self):
+        super().clean()
+        if self.pk is None:
+            return
+        stored = SangerDetail.objects.get(pk=self.pk)
+        if (
+            stored.raw_ab1_sha256 != self.raw_ab1_sha256
+            or stored.raw_ab1_path != self.raw_ab1_path
+        ):
+            raise ValidationError("Raw .ab1 reference is append-only; it cannot be overwritten.")
+
+
+class QpcrDetail(models.Model):
+    """A qPCR result's per-probe readings (a repeating group). `rollup` is DERIVED
+    from the probe readings — single (one P), mixed (≥2 P), untyped (no P) — never
+    a stored column."""
+
+    result = models.ForeignKey(
+        GenotypingResult, on_delete=models.CASCADE, related_name="qpcr_details"
+    )
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return f"QpcrDetail {self.pk}"
+
+    @property
+    def rollup(self):
+        positives = sum(1 for r in self.probe_readings.all() if r.call == "P")
+        if positives >= 2:
+            return "mixed"
+        if positives == 1:
+            return "single"
+        return "untyped"
+
+
+class QpcrProbeReading(models.Model):
+    """One per-probe P/N/I reading. The second-reviewer gate is scoped to
+    indeterminate (`I`) readings ONLY — clean P/N calls are not slowed. clean()
+    requires a different reviewer + timestamp when `call == 'I'`."""
+
+    qpcr_detail = models.ForeignKey(
+        QpcrDetail, on_delete=models.CASCADE, related_name="probe_readings"
+    )
+    probe = models.CharField(max_length=16)
+    call = models.CharField(max_length=1, choices=QPCR_PROBE_CHOICES)
+    entered_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="qpcr_readings_entered",
+    )
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="qpcr_readings_reviewed",
+    )
+    reviewed_at = models.DateField(null=True, blank=True)
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return f"{self.probe}={self.call}"
+
+    def clean(self):
+        super().clean()
+        if self.call != "I":
+            return
+        if self.reviewed_by_id is None or self.reviewed_at is None:
+            raise ValidationError("An indeterminate (I) reading requires a second reviewer.")
+        if self.entered_by_id is not None and self.entered_by_id == self.reviewed_by_id:
+            raise ValidationError("The second reviewer must differ from the editor.")
