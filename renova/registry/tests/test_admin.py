@@ -7,6 +7,7 @@ from renova.registry.models import (
     Aliquot,
     CMVQuantitative,
     CMVSerology,
+    ConcordancePair,
     ConsumptionEvent,
     DrugLevel,
     Hospitalization,
@@ -161,6 +162,19 @@ def test_event_admin_is_append_only(model):
     # Adding is still allowed (append-only, not read-only): the mixin does not
     # override has_add_permission, so a permitted user may record a new event.
     assert ma.has_add_permission(_req()) is True
+
+
+# --- Slice 11: concordance pair admin ---
+
+
+def test_concordance_pair_is_registered():
+    assert ConcordancePair in admin.site._registry
+
+
+def test_concordance_pair_admin_has_derived_readonly():
+    ma = admin.site._registry[ConcordancePair]
+    assert "suggested_concordance_call" in ma.readonly_fields
+    assert "co_resolved_count" in ma.readonly_fields
 
 
 class _User:

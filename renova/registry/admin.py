@@ -6,6 +6,7 @@ from .models import (
     ClosureDay,
     CMVQuantitative,
     CMVSerology,
+    ConcordancePair,
     ConsumptionEvent,
     Donor,
     DonorVisit,
@@ -344,3 +345,16 @@ class SangerDetailAdmin(SimpleHistoryAdmin):
 class ReferenceSetAdmin(SimpleHistoryAdmin):
     list_display = ("id", "name", "content_sha256", "pinned_at")
     inlines = [ReferenceAccessionInline]
+
+
+# --- Slice 11: source attribution & genotype concordance (Obj 5) ---
+
+
+@admin.register(ConcordancePair)
+class ConcordancePairAdmin(SimpleHistoryAdmin):
+    list_display = (
+        "id", "recipient", "recipient_result", "comparator_result",
+        "concordance_call", "superinfection_status",
+    )
+    # the grader's outputs are computed, never editable
+    readonly_fields = ("suggested_concordance_call", "co_resolved_count", "comparator_subject")
