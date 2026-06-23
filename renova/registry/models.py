@@ -13,6 +13,12 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from simple_history.models import HistoricalRecords
 
+from .attribution import (
+    CONCORDANCE_CALLS,
+    SUPERINFECTION_STATUSES,
+    counted_for_strain_identity,
+    grade_concordance,
+)
 from .episodes import (
     SEVERITY_TIERS,
     EpisodePoint,
@@ -120,6 +126,12 @@ VISIT_SHIFT_CAP_DAYS = 3
 ASSAY_TYPE_CHOICES = [("sanger", "Sanger"), ("qpcr", "qPCR")]
 SANGER_CALL_CHOICES = [("R", "Resolved"), ("F", "Failed-QC"), ("N", "No-amplicon")]
 QPCR_PROBE_CHOICES = [("P", "Positive"), ("N", "Negative"), ("I", "Indeterminate")]
+# Slice 11 source-attribution & concordance vocabularies. The four concordance
+# tiers come from the pure grader so the stored choices can never drift from what
+# grade_concordance returns (the SEVERITY_TIER_CHOICES precedent). Superinfection
+# is flagged candidate vs confirmed; only confirmed upgrades source_label.
+CONCORDANCE_CALL_CHOICES = [(t, t.replace("_", " ").capitalize()) for t in CONCORDANCE_CALLS]
+SUPERINFECTION_STATUS_CHOICES = [(s, s.capitalize()) for s in SUPERINFECTION_STATUSES]
 
 
 def _age_at(subject, ref_date):
@@ -278,6 +290,35 @@ class Recipient(BaseSubject):
             return None
         days = [p.day for p in points]
         return summarize_episodes(self.cmv_episodes, min(days), max(days))
+
+    @property
+    def has_positive_qnat(self):
+        """Any REPORTED viral-load draw on this recipient at/above the assay LoD
+        (34.5 IU/mL) — the SAME positivity bar the episode deriver uses (DEC-023),
+        so attribution and episodes can never disagree about what 'positive' means."""
+        return CMVQuantitative.objects.filter(
+            recipient_visit__recipient=self,
+            result_status="reported",
+            value__gte=CMVQuantitative.LOD,
+        ).exists()
+
+    @property
+    def source_label(self):
+        """Exactly one flat source label by the LOCKED priority
+        donor-derived > primary > reactivation (AC1), or None when no CMV event is
+        attributable. donor-derived is the reviewer-set tier (a ConcordancePair with
+        superinfection_status == 'confirmed', DEC-021); primary is the computed
+        QNAT+-in-an-R− trigger (seroconversion never gates, AC2)."""
+        if self.concordance_pairs.filter(superinfection_status="confirmed").exists():
+            return "donor_derived"
+        if not self.has_positive_qnat:
+            return None
+        serostatus = self.pre_kt_igg_serostatus
+        if serostatus == "NEG":
+            return "primary"
+        if serostatus == "POS":
+            return "reactivation"
+        return None  # serostatus unknown -> not attributable
 
 
 class Donor(BaseSubject):
@@ -1412,3 +1453,142 @@ class QpcrProbeReading(models.Model):
             raise ValidationError("An indeterminate (I) reading requires a second reviewer.")
         if self.entered_by_id is not None and self.entered_by_id == self.reviewed_by_id:
             raise ValidationError("The second reviewer must differ from the editor.")
+
+
+# --- Slice 11: source attribution & genotype concordance (Obj 5) ---
+
+
+class ConcordancePair(models.Model):
+    """One reviewer-adjudicated genotype-concordance comparison for a recipient:
+    the recipient's `recipient_result` against an optional `comparator_result`
+    (a second GenotypingResult — a donor genotype path may land later, DEC-024).
+
+    `suggested_concordance_call` and `co_resolved_count` are DERIVED at read from
+    the two results' GenotypeCalls (the pure grader, derive-don't-store). The
+    reviewer's own `concordance_call` is a SEPARATE stored field that is never
+    auto-overwritten — false precision is recordable as `indeterminate`.
+    `reviewed_by`/`reviewed_at` are staff attribution and are NEVER exported."""
+
+    recipient = models.ForeignKey(
+        Recipient, on_delete=models.PROTECT, related_name="concordance_pairs"
+    )
+    recipient_result = models.ForeignKey(
+        GenotypingResult, on_delete=models.PROTECT, related_name="+"
+    )
+    comparator_result = models.ForeignKey(
+        GenotypingResult,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="+",
+        help_text="Optional second strain to compare against. Absent -> < 2 co-resolved "
+        "loci -> indeterminate (the honest grading).",
+    )
+    concordance_call = models.CharField(
+        max_length=16,
+        choices=CONCORDANCE_CALL_CHOICES,
+        blank=True,
+        default="",
+        help_text="Reviewer-set tier. Never auto-overwritten by the suggestion; "
+        "false precision is recorded as 'indeterminate'.",
+    )
+    superinfection_status = models.CharField(
+        max_length=12,
+        choices=SUPERINFECTION_STATUS_CHOICES,
+        default="none",
+        help_text="Mixed-infection donor-derived superinfection flag. Only 'confirmed' "
+        "upgrades the recipient's source_label to donor_derived; 'candidate' does not.",
+    )
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="concordance_pairs_reviewed",
+    )
+    reviewed_at = models.DateField(null=True, blank=True)
+    history = HistoricalRecords()
+
+    class Meta:
+        constraints = [
+            # A pair is never a result against itself (mirror the GenotypeCall
+            # dual-guard idiom; NULL comparator passes the CHECK harmlessly).
+            models.CheckConstraint(
+                name="concordancepair_not_self_comparison",
+                condition=~models.Q(comparator_result=models.F("recipient_result")),
+            ),
+        ]
+
+    def __str__(self):
+        return f"ConcordancePair {self.pk} ({self.recipient_id})"
+
+    def _calls_by_locus(self, result):
+        """{locus: {alleles: set, resolved: bool}} for a result. A locus is resolved
+        when at least one of its calls is not a Sanger failure/no-amplicon (a qPCR
+        call carries sanger_call=None and counts as resolved)."""
+        out = {}
+        if result is None:
+            return out
+        for call in result.calls.all():
+            entry = out.setdefault(call.locus, {"alleles": set(), "resolved": False})
+            entry["alleles"].add(call.allele)
+            if call.sanger_call in (None, "R"):
+                entry["resolved"] = True
+        return out
+
+    def locus_comparisons(self):
+        """Per-locus comparison dicts over the union of loci in either member,
+        in the pure grader's shape."""
+        a = self._calls_by_locus(self.recipient_result)
+        b = self._calls_by_locus(self.comparator_result if self.comparator_result_id else None)
+        empty = {"alleles": set(), "resolved": False}
+        comparisons = []
+        for locus in set(a) | set(b):
+            ca = a.get(locus, empty)
+            cb = b.get(locus, empty)
+            comparisons.append({
+                "locus": locus,
+                "allele_a_set": ca["alleles"],
+                "allele_b_set": cb["alleles"],
+                "resolved_a": ca["resolved"],
+                "resolved_b": cb["resolved"],
+            })
+        return comparisons
+
+    @property
+    def comparator_subject(self):
+        """The comparator result's recipient (through the tube), else None."""
+        return self.comparator_result.subject if self.comparator_result_id else None
+
+    @property
+    def suggested_concordance_call(self):
+        """Graded tier the stored GenotypeCalls imply — a SUGGESTION the reviewer
+        may override. Derived, never stored."""
+        return grade_concordance(self.locus_comparisons())
+
+    @property
+    def co_resolved_count(self):
+        """Number of co-resolved strain-identity loci (resistance excluded)."""
+        return sum(
+            1
+            for c in self.locus_comparisons()
+            if c["resolved_a"] and c["resolved_b"] and counted_for_strain_identity(c["locus"])
+        )
+
+    def clean(self):
+        super().clean()
+        if (
+            self.recipient_result_id is not None
+            and self.recipient_result.subject != self.recipient
+        ):
+            raise ValidationError("recipient_result must belong to this recipient.")
+        if (
+            self.comparator_result_id is not None
+            and self.comparator_result_id == self.recipient_result_id
+        ):
+            raise ValidationError("comparator_result cannot be the recipient_result itself.")
+        if self.superinfection_status in ("candidate", "confirmed") and self.comparator_result_id is None:
+            raise ValidationError(
+                "A candidate/confirmed superinfection requires a comparator_result "
+                "(no donor-derived superinfection without a comparator strain)."
+            )

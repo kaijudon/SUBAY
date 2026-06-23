@@ -14,6 +14,7 @@ from renova.registry.models import (
     ClosureDay,
     CMVQuantitative,
     CMVSerology,
+    ConcordancePair,
     ConsumptionEvent,
     Donor,
     DonorVisit,
@@ -93,6 +94,8 @@ def test_export_produces_one_csv_per_model_with_keys_intact(seeded, tmp_path):
         "aliquot.csv",
         "genotypingresult.csv",
         "genotypecall.csv",
+        "concordancepair.csv",
+        "concordancelocus.csv",
         "manifest.json",
     }
 
