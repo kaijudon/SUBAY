@@ -29,6 +29,8 @@ from renova.registry.models import (
     RecipientVisit,
     RejectionEpisode,
     RenalFunction,
+    ResistanceCall,
+    ResistanceVariant,
     SequencingAliquot,
     TBNKPanel,
     ThawEvent,
@@ -96,6 +98,8 @@ def test_export_produces_one_csv_per_model_with_keys_intact(seeded, tmp_path):
         "genotypecall.csv",
         "concordancepair.csv",
         "concordancelocus.csv",
+        "resistancecall.csv",
+        "resistancevariant.csv",
         "manifest.json",
     }
 
@@ -1329,3 +1333,134 @@ def test_export_refuses_on_leaky_concordance_allele(db, tmp_path):
     with pytest.raises(CommandError):
         call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
     assert not (tmp_path / "v0.1").exists()
+
+
+# --- Slice 12: resistance surveillance export (AC4) — kept SEPARATE from the
+# strain-identity loci, day-offsets only, no calendar date / identifier. ---
+
+
+@pytest.fixture
+def seeded_slice12(db):
+    """A recipient with two resistance calls riding the same tube→result chain as
+    genotyping: an actionable UL97 call (established variant + active virological
+    failure -> return-of-results flag) and a UL54 polymorphism call without active
+    failure. The derived sample_date (2025-04-01, day 90) must leave only as a
+    day-offset integer."""
+    r = Recipient.objects.create(
+        subject_id="SCMVR07", date_of_birth=date(1980, 1, 1), sex="M", kt_date=date(2025, 1, 1)
+    )
+    v = RecipientVisit.objects.create(
+        recipient=r, timepoint_label="day_90", actual_visit_date=date(2025, 4, 1)
+    )
+    a = Aliquot.objects.create(
+        recipient_visit=v, matrix="plasma", collected_date=date(2025, 4, 1),
+        initial_volume_ul=Decimal("1000"),
+    )
+    run = PipelineRun.objects.create(input_manifest_sha256="a" * 64)
+    res = GenotypingResult.objects.create(aliquot=a, pipeline_run=run, assay_type="sanger")
+    ul97 = ResistanceCall.objects.create(
+        result=res, locus="UL97", status="R", qnat_iu_ml=Decimal("1500")
+    )
+    ResistanceVariant.objects.create(resistance_call=ul97, variant="C592G", tier="established")
+    ul54 = ResistanceCall.objects.create(
+        result=res, locus="UL54", status="F", qnat_iu_ml=Decimal("10")
+    )
+    ResistanceVariant.objects.create(resistance_call=ul54, variant="M460V", tier="polymorphism")
+    return r
+
+
+def test_export_writes_resistance_files(seeded_slice12, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    assert (out / "resistancecall.csv").exists()
+    assert (out / "resistancevariant.csv").exists()
+
+
+def test_export_resistance_call_is_de_identified_day_offset(seeded_slice12, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    with (out / "resistancecall.csv").open(newline="") as fh:
+        rows = {r["locus"]: r for r in csv.DictReader(fh)}
+    assert set(rows) == {"UL97", "UL54"}
+    ul97 = rows["UL97"]
+    assert ul97["subject"] == "SCMVR07"  # opaque pseudonym only
+    assert ul97["status"] == "R"
+    assert ul97["established_resistance_present"] == "true"
+    assert ul97["return_of_results_flag"] == "true"  # established ∩ active failure
+    assert ul97["qnat_iu_ml"] == "1500.00"  # a value, never a date
+    assert ul97["sample_day_offset"] == "90"  # 2025-04-01 is 90 days after kt day 0
+    # established without active failure does not raise the flag
+    assert rows["UL54"]["established_resistance_present"] == "false"
+    assert rows["UL54"]["return_of_results_flag"] == "false"
+
+
+def test_export_resistance_variants_are_long_one_row_per_variant(seeded_slice12, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    with (out / "resistancevariant.csv").open(newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    assert {(r["variant"], r["tier"]) for r in rows} == {
+        ("C592G", "established"),
+        ("M460V", "polymorphism"),
+    }
+
+
+def test_export_resistance_kept_separate_from_strain_identity_loci(seeded_slice12, tmp_path):
+    """AC4: resistance surveillance loci live in their OWN file, never folded into
+    the strain-identity concordance locus table."""
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    # no concordance pair seeded here -> the strain-identity locus table has no rows
+    with (out / "concordancelocus.csv").open(newline="") as fh:
+        assert [r for r in csv.DictReader(fh) if r["locus"]] == []
+    # but the resistance call file carries the UL97/UL54 surveillance calls
+    with (out / "resistancecall.csv").open(newline="") as fh:
+        loci = {r["locus"] for r in csv.DictReader(fh)}
+    assert loci == {"UL97", "UL54"}
+
+
+def test_export_resistance_no_calendar_date_or_identifier(seeded_slice12, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    for f in out.glob("*.csv"):
+        text = f.read_text()
+        assert "2025-04-01" not in text  # sample/collection date never a calendar date
+        assert "1980-01-01" not in text  # dob
+    rc = (out / "resistancecall.csv").read_text()
+    assert "sample_day_offset" in rc  # offsets, not dates
+
+
+def test_export_manifest_lists_resistance_files(seeded_slice12, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    manifest = json.loads((out / "manifest.json").read_text())
+    assert "resistancecall.csv" in manifest["files"]
+    assert "resistancevariant.csv" in manifest["files"]
+    assert manifest["files"]["resistancecall.csv"]["columns"]["subject"] == "c"
+    assert manifest["files"]["resistancecall.csv"]["columns"]["sample_day_offset"] == "i"
+    assert manifest["files"]["resistancevariant.csv"]["columns"]["tier"] == "c"
+
+
+def test_export_refuses_on_leaky_resistance_variant(db, tmp_path):
+    """A name-shaped value planted in an exported resistance column triggers the
+    de-id chokepoint with nothing written (mirrors the genotypecall case)."""
+    r = Recipient.objects.create(
+        subject_id="SCMVR07", date_of_birth=date(1980, 1, 1), sex="M", kt_date=date(2025, 1, 1)
+    )
+    v = RecipientVisit.objects.create(
+        recipient=r, timepoint_label="day_90", actual_visit_date=date(2025, 4, 1)
+    )
+    a = Aliquot.objects.create(
+        recipient_visit=v, matrix="plasma", collected_date=date(2025, 4, 1),
+        initial_volume_ul=Decimal("1000"),
+    )
+    run = PipelineRun.objects.create(input_manifest_sha256="a" * 64)
+    res = GenotypingResult.objects.create(aliquot=a, pipeline_run=run, assay_type="sanger")
+    call = ResistanceCall.objects.create(result=res, locus="UL97", status="R")
+    ResistanceVariant.objects.create(
+        resistance_call=call, variant="Maria Santos", tier="established"
+    )
+    with pytest.raises(CommandError):
+        call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    assert not (tmp_path / "v0.1").exists()
+    assert list(tmp_path.glob(".v0.1.staging-*")) == []
