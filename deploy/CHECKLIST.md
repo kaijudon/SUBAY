@@ -16,7 +16,9 @@ mark an item done until its **Verify** passes. HITL: a human runs and signs thes
   - [ ] `50unattended-upgrades-renova` installed; `Automatic-Reboot "false"` confirmed
   - [ ] `renova-reboot-required.timer` enabled
   - [ ] LUKS unlock tested at console; passphrase in operator's head + sealed envelope (§8)
-  - [ ] UPS (NUT) clean-shutdown tested by pulling mains power; DB intact
+  - [ ] UPS clean-shutdown tested by pulling mains power; DB intact (laptop: UPower low-battery `PowerOff` tested by draining)
+  - [ ] (laptop) `HandleLidSwitch=ignore` set; box keeps running with lid shut
+  - [ ] (laptop) desktop auto-login disabled; screen lock enforced
 - [ ] **§5 Backup + drill**
   - [ ] `renova-backup.timer` enabled; nightly run produces all 3 parts; secrets/key on separate `KEY_DEST` mount
   - [ ] `restore-drill.sh` passes; pgcrypto decrypts end-to-end; logged in RUNBOOK §5 table
@@ -31,4 +33,5 @@ mark an item done until its **Verify** passes. HITL: a human runs and signs thes
 - [ ] **§8 Sealed credentials / bus-factor**
   - [ ] all four secrets sealed in tamper-evident envelopes, Co-DM off-site custody
   - [ ] written bus-factor invocation procedure on file; Co-DM has no routine data access
+  - [ ] (laptop) physical custody enforced: locked room + cable lock; powered OFF (not suspended) when unattended; recorded in DPO sign-off
 - [ ] **Sign-off** — RUNBOOK sign-off table complete (DPO + Data Manager + Operator + Co-DM)
