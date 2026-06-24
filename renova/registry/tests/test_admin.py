@@ -13,9 +13,11 @@ from renova.registry.models import (
     Hospitalization,
     MedicationCourse,
     OtherCondition,
+    ProtocolDeviation,
     Recipient,
     RecipientVisit,
     RejectionEpisode,
+    ReleaseEvent,
     RenalFunction,
     SequencingAliquot,
     TBNKPanel,
@@ -175,6 +177,20 @@ def test_concordance_pair_admin_has_derived_readonly():
     ma = admin.site._registry[ConcordancePair]
     assert "suggested_concordance_call" in ma.readonly_fields
     assert "co_resolved_count" in ma.readonly_fields
+
+
+# --- Slice 14: safety release-timeliness admin ---
+
+
+def test_slice14_models_are_registered():
+    assert ReleaseEvent in admin.site._registry
+    assert ProtocolDeviation in admin.site._registry
+
+
+def test_quantitative_admin_shows_release_overdue_readonly():
+    ma = admin.site._registry[CMVQuantitative]
+    assert "release_overdue" in ma.readonly_fields
+    assert "release_overdue" in ma.list_display
 
 
 class _User:
