@@ -35,6 +35,17 @@ from .sites import RenovaAdminSite  # re-exported; the class is defined in sites
 __all__ = ["RenovaAdminSite"]
 
 
+class _EditorDefaultedAdmin(SimpleHistoryAdmin):
+    """Defaults `entered_by` to the acting user on add (no bespoke role code —
+    the different-user verification gate is enforced in the model, reusing the
+    existing groups), so the admin and shell both attribute entry the same way."""
+
+    def save_model(self, request, obj, form, change):
+        if not change and obj.entered_by_id is None:
+            obj.entered_by = request.user
+        super().save_model(request, obj, form, change)
+
+
 class CMVSerologyInline(admin.TabularInline):
     model = CMVSerology
     fk_name = "recipient_visit"
@@ -150,9 +161,10 @@ class OtherConditionAdmin(SimpleHistoryAdmin):
 
 
 @admin.register(CMVSerology)
-class CMVSerologyAdmin(SimpleHistoryAdmin):
+class CMVSerologyAdmin(_EditorDefaultedAdmin):
     list_display = (
-        "id", "recipient_visit", "donor", "value", "is_positive", "result_status", "drawn_date",
+        "id", "recipient_visit", "donor", "value", "is_positive", "result_status",
+        "drawn_date", "verified_by", "is_verified",
     )
     readonly_fields = ("is_positive", "igm_positive")  # derived at the 2.0 AU/mL threshold
 
@@ -184,9 +196,10 @@ class RenalFunctionAdmin(SimpleHistoryAdmin):
 
 
 @admin.register(DrugLevel)
-class DrugLevelAdmin(SimpleHistoryAdmin):
+class DrugLevelAdmin(_EditorDefaultedAdmin):
     list_display = (
-        "id", "recipient_visit", "donor", "analyte", "value", "result_status", "drawn_date",
+        "id", "recipient_visit", "donor", "analyte", "value", "result_status",
+        "drawn_date", "verified_by", "is_verified",
     )
 
 
@@ -200,10 +213,10 @@ class MedicationCourseAdmin(SimpleHistoryAdmin):
 
 
 @admin.register(RejectionEpisode)
-class RejectionEpisodeAdmin(SimpleHistoryAdmin):
+class RejectionEpisodeAdmin(_EditorDefaultedAdmin):
     list_display = (
         "id", "recipient", "onset_date", "rejection_type", "banff_grade",
-        "biopsy_proven", "resolved_date",
+        "biopsy_proven", "resolved_date", "verified_by", "is_verified",
     )
 
 
@@ -306,21 +319,11 @@ class GenotypingResultAdmin(SimpleHistoryAdmin):
     inlines = [GenotypeCallInline, SangerDetailInline, QpcrDetailInline]
 
 
-class _EditorDefaultedAdmin(SimpleHistoryAdmin):
-    """Defaults `entered_by` to the acting user on add (no bespoke role code —
-    the different-user lock is enforced in the model, reusing the existing groups)."""
-
-    def save_model(self, request, obj, form, change):
-        if not change and obj.entered_by_id is None:
-            obj.entered_by = request.user
-        super().save_model(request, obj, form, change)
-
-
 @admin.register(GenotypeCall)
 class GenotypeCallAdmin(_EditorDefaultedAdmin):
     list_display = (
         "id", "result", "locus", "allele", "sanger_call", "entered_by",
-        "reviewed_by", "is_locked",
+        "verified_by", "is_verified",
     )
 
 

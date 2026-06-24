@@ -63,7 +63,7 @@ def test_no_prescription_fk():
     """DrugLevel is standalone (slice 08 is OUT) — no FK to any prescription."""
     for f in DrugLevel._meta.get_fields():
         if f.is_relation and f.many_to_one:
-            assert f.name in {"recipient_visit", "donor"}, f"unexpected FK: {f.name}"
+            assert f.name in {"recipient_visit", "donor", "entered_by", "verified_by"}, f"unexpected FK: {f.name}"
 
 
 def test_exactly_one_parent_visit_ok(visit):
