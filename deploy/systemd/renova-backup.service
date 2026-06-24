@@ -1,0 +1,14 @@
+# RENOVA — nightly backup unit (Slice 15, AC5). Pairs with renova-backup.timer.
+# Install both at /etc/systemd/system/; enable --now the TIMER.
+[Unit]
+Description=RENOVA three-part backup
+After=postgresql.service
+
+[Service]
+Type=oneshot
+User=renova
+Group=renova
+EnvironmentFile=/etc/renova/renova.env
+ExecStart=/opt/renova/deploy/bin/backup.sh
+# If a backup fails, push an alert through the same channel as monitoring (AC6).
+ExecStopPost=/bin/sh -c 'test $EXIT_STATUS = 0 || /opt/renova/deploy/bin/notify-operator.sh backup-failed "nightly backup exited $EXIT_STATUS"'

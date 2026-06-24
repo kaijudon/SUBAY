@@ -1,0 +1,10 @@
+# RENOVA — nightly backup schedule (Slice 15, AC5). enable --now this timer.
+[Unit]
+Description=RENOVA nightly backup at 01:30
+
+[Timer]
+OnCalendar=*-*-* 01:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,40 @@
+-- RENOVA — pgcrypto defense-in-depth (Slice 15, AC1).
+--
+-- WHY: full-disk LUKS protects data at rest while the box is OFF. pgcrypto adds a
+-- second layer for data that leaves the box — off-machine backups (Drive 2 custody,
+-- Slice 15 AC5). A stolen *backup* of an encrypted column is ciphertext, not PHI.
+--
+-- The pgcrypto symmetric key is NOT stored in the database and NOT in this repo.
+-- It lives only in the root-owned 0600 secrets file (/etc/renova/renova.env, as
+-- RENOVA_PGCRYPTO_KEY) and is escrowed on a SEPARATE custody path from the data
+-- (Slice 15 AC5). Losing the key = unreadable backups; that is the deliberate trade.
+--
+-- Run once, as the Data Manager superuser, on the real box (HITL checkpoint):
+--   psql -U <data_manager> -d renova -f deploy/sql/01-pgcrypto.sql
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- Column-level encryption is applied to identifying free-text / contact columns that
+-- are NEVER part of the de-identified export (the export already emits only
+-- day-offsets + string subject IDs — see Slice 01). This protects the operational
+-- admin store, not the analysis set.
+--
+-- Pattern (apply per sensitive column; do NOT encrypt subject_id — it is the join key):
+--   1. Add a bytea column to hold ciphertext.
+--   2. Backfill: UPDATE ... SET col_enc = pgp_sym_encrypt(col::text, :'key').
+--   3. Drop the plaintext column once verified.
+--   4. Read back with pgp_sym_decrypt(col_enc, :'key') in a guarded view.
+--
+-- Example for a hypothetical Recipient.contact_note (illustrative — confirm the real
+-- column list with the DPO before running; over-encrypting breaks admin search):
+--
+--   ALTER TABLE registry_recipient ADD COLUMN contact_note_enc bytea;
+--   UPDATE registry_recipient
+--     SET contact_note_enc = pgp_sym_encrypt(contact_note, current_setting('renova.pgcrypto_key'));
+--   ALTER TABLE registry_recipient DROP COLUMN contact_note;
+--
+-- The key is supplied per-session, never hard-coded:
+--   SET renova.pgcrypto_key = '<from /etc/renova/renova.env, not echoed to history>';
+--
+-- Verify decryption round-trips before dropping any plaintext column. An unverified
+-- encryption is indistinguishable from data loss.
