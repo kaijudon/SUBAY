@@ -164,7 +164,7 @@ def test_consensus_carries_editor(result, editor):
 def test_lock_same_user_rejected(result, editor):
     call = GenotypeCall(
         result=result, locus="gB", allele="gB1", entered_by=editor,
-        reviewed_by=editor, reviewed_at=date(2025, 2, 1), is_locked=True,
+        verified_by=editor, verified_at=date(2025, 2, 1), is_verified=True,
     )
     with pytest.raises(ValidationError):
         call.full_clean()
@@ -172,7 +172,7 @@ def test_lock_same_user_rejected(result, editor):
 
 def test_lock_null_reviewer_rejected(result, editor):
     call = GenotypeCall(
-        result=result, locus="gB", allele="gB1", entered_by=editor, is_locked=True
+        result=result, locus="gB", allele="gB1", entered_by=editor, is_verified=True
     )
     with pytest.raises(ValidationError):
         call.full_clean()
@@ -181,7 +181,7 @@ def test_lock_null_reviewer_rejected(result, editor):
 def test_lock_different_user_saves(result, editor, reviewer):
     call = GenotypeCall(
         result=result, locus="gB", allele="gB1", entered_by=editor,
-        reviewed_by=reviewer, reviewed_at=date(2025, 2, 1), is_locked=True,
+        verified_by=reviewer, verified_at=date(2025, 2, 1), is_verified=True,
     )
     call.full_clean()
     call.save()
@@ -189,11 +189,11 @@ def test_lock_different_user_saves(result, editor, reviewer):
 
 
 def test_locked_call_content_is_frozen(result, editor, reviewer):
-    """A locked call's allele content cannot be edited (clean() freeze guard,
+    """A verified call's allele content cannot be edited (clean() freeze guard,
     mirroring SangerDetail append-only). Lock reads as 'frozen', so make it so."""
     call = GenotypeCall.objects.create(
         result=result, locus="gB", allele="gB1", entered_by=editor,
-        reviewed_by=reviewer, reviewed_at=date(2025, 2, 1), is_locked=True,
+        verified_by=reviewer, verified_at=date(2025, 2, 1), is_verified=True,
     )
     call.allele = "gB99_TAMPERED"
     with pytest.raises(ValidationError):
@@ -204,19 +204,19 @@ def test_locked_call_cannot_be_unlocked_and_edited(result, editor, reviewer):
     """Freeze keys off the STORED lock, so unlock-and-edit in one save is blocked."""
     call = GenotypeCall.objects.create(
         result=result, locus="gB", allele="gB1", entered_by=editor,
-        reviewed_by=reviewer, reviewed_at=date(2025, 2, 1), is_locked=True,
+        verified_by=reviewer, verified_at=date(2025, 2, 1), is_verified=True,
     )
-    call.is_locked = False
+    call.is_verified = False
     call.allele = "gB99_TAMPERED"
     with pytest.raises(ValidationError):
         call.full_clean()
 
 
 def test_lock_same_user_rejected_by_db(result, editor):
-    """DB-layer belt-and-suspenders: same editor/reviewer when locked is rejected."""
+    """DB-layer belt-and-suspenders: same editor/reviewer when verified is rejected."""
     call = GenotypeCall(
         result=result, locus="gB", allele="gB1", entered_by=editor,
-        reviewed_by=editor, reviewed_at=date(2025, 2, 1), is_locked=True,
+        verified_by=editor, verified_at=date(2025, 2, 1), is_verified=True,
     )
     with pytest.raises(IntegrityError):
         with transaction.atomic():
