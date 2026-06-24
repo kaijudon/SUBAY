@@ -25,15 +25,23 @@ from renova.registry.models import (
     MedicationCourse,
     OtherCondition,
     PipelineRun,
+    ProtocolDeviation,
     Recipient,
     RecipientVisit,
     RejectionEpisode,
+    ReleaseEvent,
     RenalFunction,
     ResistanceCall,
     ResistanceVariant,
     SequencingAliquot,
     TBNKPanel,
     ThawEvent,
+)
+from renova.registry.management.commands.export_analysis_set import (
+    ADDRESS_RX,
+    DATE_RX,
+    MRN_RX,
+    NAME_RX,
 )
 
 
@@ -100,6 +108,8 @@ def test_export_produces_one_csv_per_model_with_keys_intact(seeded, tmp_path):
         "concordancelocus.csv",
         "resistancecall.csv",
         "resistancevariant.csv",
+        "releaseevent.csv",
+        "protocoldeviation.csv",
         "manifest.json",
     }
 
@@ -1460,6 +1470,142 @@ def test_export_refuses_on_leaky_resistance_variant(db, tmp_path):
     ResistanceVariant.objects.create(
         resistance_call=call, variant="Maria Santos", tier="established"
     )
+    with pytest.raises(CommandError):
+        call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    assert not (tmp_path / "v0.1").exists()
+    assert list(tmp_path.glob(".v0.1.staging-*")) == []
+
+
+# --- Slice 14: safety release-timeliness export (AC5) — day-offsets only, the
+# dual-track deviation/SAE facts, no calendar date / identifier / free text. ---
+
+
+@pytest.fixture
+def seeded_slice14(db):
+    """A recipient with a high-viral-load reported QNAT (drawn day 90), a logged
+    ReleaseEvent (released day 92), and a dual-track ProtocolDeviation recorded at
+    day 95. Every date must leave only as an integer day-offset from kt_date."""
+    r = Recipient.objects.create(
+        subject_id="SCMVR07", date_of_birth=date(1980, 1, 1), sex="M", kt_date=date(2025, 1, 1)
+    )
+    v = RecipientVisit.objects.create(
+        recipient=r, timepoint_label="day_90", actual_visit_date=date(2025, 4, 1)
+    )
+    q = CMVQuantitative.objects.create(
+        recipient_visit=v, value=Decimal("15000"), result_status="reported",
+        severity_tier="disease", drawn_date=date(2025, 4, 1),
+    )
+    ReleaseEvent.objects.create(quantitative=q, released_date=date(2025, 4, 3))  # day 92
+    ProtocolDeviation.objects.create(
+        quantitative=q, deviation_type="late_release", caused_harm=True,
+        is_research_related_sae=True, recorded_date=date(2025, 4, 6),  # day 95
+    )
+    return r
+
+
+def test_export_writes_safety_files(seeded_slice14, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    assert (out / "releaseevent.csv").exists()
+    assert (out / "protocoldeviation.csv").exists()
+
+
+def test_export_release_event_is_day_offset(seeded_slice14, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    with (out / "releaseevent.csv").open(newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["recipient"] == "SCMVR07"  # opaque pseudonym only
+    assert row["released_day_offset"] == "92"  # 2025-04-03 is 92 days after kt day 0
+    assert "released_date" not in row  # the raw DateField never becomes a column
+
+
+def test_export_protocol_deviation_is_dual_track_day_offset(seeded_slice14, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    with (out / "protocoldeviation.csv").open(newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["recipient"] == "SCMVR07"
+    assert row["deviation_type"] == "late_release"
+    assert row["caused_harm"] == "true"
+    assert row["is_research_related_sae"] == "true"  # dual-track, both countable
+    assert row["recorded_day_offset"] == "95"
+    assert "recorded_date" not in row
+
+
+def test_export_safety_no_calendar_date_or_identifier(seeded_slice14, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    for f in (out / "releaseevent.csv", out / "protocoldeviation.csv"):
+        text = f.read_text()
+        for rx in (DATE_RX, NAME_RX, MRN_RX, ADDRESS_RX):
+            assert rx.search(text) is None  # day-offsets only, no identifier shapes
+        assert "2025-04-01" not in text  # no calendar date
+        assert "1980-01-01" not in text  # no dob
+
+
+def test_export_safety_files_have_no_free_text_column(seeded_slice14, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    for name in ("releaseevent.csv", "protocoldeviation.csv"):
+        with (out / name).open(newline="") as fh:
+            header = next(csv.reader(fh))
+        # only structured columns; no note/reason/comment free-text leak vector
+        assert not any(
+            k in h for h in header for k in ("note", "reason", "comment", "_date")
+        )
+
+
+def test_export_manifest_lists_safety_files(seeded_slice14, tmp_path):
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    manifest = json.loads((out / "manifest.json").read_text())
+    assert "releaseevent.csv" in manifest["files"]
+    assert "protocoldeviation.csv" in manifest["files"]
+    assert manifest["files"]["releaseevent.csv"]["columns"]["released_day_offset"] == "i"
+    assert manifest["files"]["releaseevent.csv"]["row_count"] == 1
+    assert manifest["files"]["protocoldeviation.csv"]["columns"]["recorded_day_offset"] == "i"
+    assert manifest["files"]["protocoldeviation.csv"]["columns"]["deviation_type"] == "c"
+    assert "sha256" in manifest["files"]["protocoldeviation.csv"]
+
+
+def test_export_safety_donor_attached_qnat_blanks_offset(db, tmp_path):
+    """A release-event on a donor-attached QNAT has no kt anchor -> blank offset,
+    never the calendar released_date (the donor/DonorVisit precedent)."""
+    d = Donor.objects.create(
+        subject_id="DCMVD07", date_of_birth=date(1980, 1, 1), sex="M", donor_type="living"
+    )
+    q = CMVQuantitative.objects.create(
+        donor=d, value=Decimal("99999"), result_status="reported", drawn_date=date(2025, 4, 1)
+    )
+    ReleaseEvent.objects.create(quantitative=q, released_date=date(2025, 4, 1))
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    out = tmp_path / "v0.1"
+    with (out / "releaseevent.csv").open(newline="") as fh:
+        row = next(csv.DictReader(fh))
+    assert row["recipient"] == ""
+    assert row["released_day_offset"] == ""
+
+
+def test_export_refuses_on_leaky_deviation_type(db, tmp_path):
+    """A name-shaped value planted in an exported safety column triggers the de-id
+    chokepoint with nothing written (mirrors the leaky closure_reason case)."""
+    r = Recipient.objects.create(
+        subject_id="SCMVR07", date_of_birth=date(1980, 1, 1), sex="M", kt_date=date(2025, 1, 1)
+    )
+    v = RecipientVisit.objects.create(
+        recipient=r, timepoint_label="day_90", actual_visit_date=date(2025, 4, 1)
+    )
+    q = CMVQuantitative.objects.create(
+        recipient_visit=v, value=Decimal("15000"), result_status="reported",
+        drawn_date=date(2025, 4, 1),
+    )
+    # .save() bypasses clean()/choices to plant a leaky value into an exported column.
+    ProtocolDeviation.objects.create(quantitative=q, deviation_type="Maria Santos")
     with pytest.raises(CommandError):
         call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
     assert not (tmp_path / "v0.1").exists()

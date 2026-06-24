@@ -477,3 +477,64 @@ Template (one entry per consequential decision, IDs sequential — DEC-001, DEC-
 - Reversibility: High — additive setting; an app-layer encryption strategy could be
   layered on later without changing the content-addressed storage contract.
 - Timestamp (UTC ISO 8601): 2026-06-23T00:00:00Z
+
+## DEC-021 — Symptomatic safety trigger = CMVQuantitative.severity_tier ∈ {syndrome, disease}
+- Decision: Slice 14 needs a "symptomatic" trigger for the safety-release flag. Decide
+  whether to add a new field or reuse existing QNAT data.
+- Chosen Option: Reuse `CMVQuantitative.severity_tier` (added Slice 07); the symptomatic
+  tiers are `safety.SYMPTOMATIC_TIERS`, DERIVED as
+  `tuple(t for t in episodes.SEVERITY_TIERS if t != "asymptomatic")` so they can never
+  drift. Both AC1 triggers (high value, symptomatic) live on the one QNAT row, so the
+  release-event/deviation FK a single existing model.
+- Confidence (0-100): 85
+- Alternatives Considered:
+  1. Add a new `symptomatic` boolean to the QNAT — rejected: duplicates the existing
+     severity_tier signal and could disagree with it (a stored fact and its derived value
+     silently diverging — the exact failure mode the project's derive-don't-store rule
+     avoids).
+- Reasoning: The card's explicit instruction is "reuses the QNAT model … not heavy new
+  schema." severity_tier already carries the Kotton-2018 clinical tier; deriving the
+  symptomatic set from it keeps one source of truth (the SEVERITY_TIERS / RESISTANCE_LOCI
+  precedent).
+- Reversibility: High — the constant is one tuple; a different symptomatic definition is a
+  one-line change in the pure module.
+- Timestamp (UTC ISO 8601): 2026-06-24T00:00:00Z
+
+## DEC-022 — 24h release window evaluated at DAY granularity
+- Decision: The SOP deadline is "within 24h", but every registry date is a `DateField`
+  for the day-offset de-id contract. Decide the timeliness resolution.
+- Chosen Option: Evaluate timeliness at day granularity:
+  `0 <= released_offset - drawn_offset <= RELEASE_WINDOW_DAYS` with
+  `RELEASE_WINDOW = timedelta(hours=24)` and `RELEASE_WINDOW_DAYS == 1` (same-day or
+  next-day entry counts as timely). The named constants live in the discoverable
+  `safety.py` (AC2's "not hard-coded magic").
+- Confidence (0-100): 70
+- Alternatives Considered:
+  1. Add a `DateTimeField` for sub-day precision — rejected: breaks the all-`DateField`
+     day-offset export contract (DEC-006 lineage) and the de-id guarantee that no
+     calendar time leaves.
+- Reasoning: A day-granular registry cannot honestly carry sub-day precision; the window
+  constant is still explicit and named. FLAG for reviewer: a next-day entry that was
+  actually > 24h reads as timely at day resolution — acceptable for a day-granular
+  registry, revisit if sub-day precision is ever required.
+- Reversibility: Medium — moving to sub-day precision would require a datetime column and
+  a new export contract; deferred until a real requirement appears.
+- Timestamp (UTC ISO 8601): 2026-06-24T00:00:00Z
+
+## DEC-023 — Dual-track deviation/SAE via one ProtocolDeviation model, two booleans
+- Decision: A missed/late release is a protocol deviation AND, when it caused harm, a
+  research-related SAE. Decide the schema for the dual track.
+- Chosen Option: One lightweight `ProtocolDeviation` model with two separately countable
+  booleans (`caused_harm`, `is_research_related_sae`); `clean()` enforces SAE ⇒ harm.
+  Both tracks stay independently queryable.
+- Confidence (0-100): 80
+- Alternatives Considered:
+  1. A separate `ResearchSAE` model FK'd to the deviation — rejected as heavier than the
+     card scopes ("lightweight … not heavy new schema").
+- Reasoning: Two booleans on one row keep both tracks separately countable without a
+  second table or join; the clean() invariant encodes the SOP rule ("additionally … a
+  research-related SAE WHEN it caused harm") so an SAE can never be recorded without harm.
+- Reversibility: High — if a richer SAE taxonomy (grading, MedDRA coding) is later
+  required, a dedicated model can be added behind a migration; the boolean stays as the
+  honest-denominator flag.
+- Timestamp (UTC ISO 8601): 2026-06-24T00:00:00Z
