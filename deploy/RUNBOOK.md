@@ -50,6 +50,14 @@ Slice 15 acceptance criteria.
   power event the box stays off until a human unlocks it at the console.
 - **UPS + clean shutdown:** follow `deploy/systemd/ups-clean-shutdown.md` (NUT). Test by
   pulling mains power and confirming a clean self-powered-off with the DB intact.
+- **Laptop deployment:** if the box is a laptop, the battery IS the UPS — skip NUT and
+  configure a low-battery clean shutdown via UPower (`/etc/UPower/UPower.conf`:
+  `CriticalPowerAction=PowerOff`, `PercentageAction` set). Test by unplugging and draining.
+  Keep the box running with the lid shut: set `HandleLidSwitch=ignore` (and
+  `HandleLidSwitchExternalPower=ignore`) in `/etc/systemd/logind.conf`, then
+  `systemctl restart systemd-logind` — otherwise a closed lid suspends the box and stops
+  backups/monitoring. Disable desktop auto-login and enforce a screen lock: an unlocked
+  logged-in session in front of PHI is an open door.
 
 ## §5 — Three-part backup + quarterly restore drill (AC5)
 
@@ -96,6 +104,11 @@ Slice 15 acceptance criteria.
   3. Restore from the latest backup + key escrow per §5; run a restore drill to confirm.
   4. Rotate every recovered secret afterward and re-seal new envelopes.
   - The Co-DM gets **no routine data-entry access** — custody is recovery-only.
+- **Physical custody (laptop):** a laptop is portable, so physical theft is a real threat.
+  LUKS (§4) makes a stolen *powered-off* box ciphertext, but custody must still be enforced:
+  keep it in a locked room, cable-locked, and powered OFF (not suspended) when unattended —
+  suspend keeps the LUKS key in RAM, so a suspended laptop is NOT protected by LUKS. Record
+  the physical-custody arrangement in the DPO sign-off below.
 
 ---
 
