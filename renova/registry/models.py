@@ -25,6 +25,13 @@ from .episodes import (
     derive_episodes,
     summarize_episodes,
 )
+from .resistance import (
+    RESISTANCE_LOCI,
+    RESISTANCE_TIERS,
+    is_active_virological_failure,
+    return_of_results,
+    rollup_by_locus,
+)
 from .scheduling import TIMEPOINT_OFFSETS, ClosureDayLike, first_operating_day
 from .validators import subject_id_validator
 
@@ -148,6 +155,12 @@ QPCR_PROBE_CHOICES = [("P", "Positive"), ("N", "Negative"), ("I", "Indeterminate
 # is flagged candidate vs confirmed; only confirmed upgrades source_label.
 CONCORDANCE_CALL_CHOICES = [(t, t.replace("_", " ").capitalize()) for t in CONCORDANCE_CALLS]
 SUPERINFECTION_STATUS_CHOICES = [(s, s.capitalize()) for s in SUPERINFECTION_STATUSES]
+# Slice 12 resistance vocabularies — the two reported loci (UL97/UL54) and the
+# three interpretive tiers come from the pure resistance module so the stored
+# choices can never drift from what the rollup/flag logic reads (the
+# SEVERITY_TIER_CHOICES precedent). Status reuses SANGER_CALL_CHOICES (R/F/N).
+RESISTANCE_LOCUS_CHOICES = [(loc, loc) for loc in RESISTANCE_LOCI]
+RESISTANCE_TIER_CHOICES = [(t, t.capitalize()) for t in RESISTANCE_TIERS]
 
 
 def _age_at(subject, ref_date):
@@ -335,6 +348,18 @@ class Recipient(BaseSubject):
         if serostatus == "POS":
             return "reactivation"
         return None  # serostatus unknown -> not attributable
+
+    @property
+    def resistance_rollup(self):
+        """Per-locus UL97/UL54 surveillance rollup for this subject (both loci
+        keyed separately, derived, never stored, never pooled — AC2). Reads the
+        resistance calls riding this recipient's tube→result chain."""
+        calls = ResistanceCall.objects.filter(
+            result__aliquot__recipient_visit__recipient=self
+        )
+        return rollup_by_locus(
+            [(c.locus, c.status, c.established_resistance_present) for c in calls]
+        )
 
 
 class Donor(BaseSubject):
@@ -1653,3 +1678,106 @@ class ConcordancePair(models.Model):
                 "A candidate/confirmed superinfection requires a comparator_result "
                 "(no donor-derived superinfection without a comparator strain)."
             )
+
+
+# --- Slice 12: resistance surveillance (UL97 / UL54, Q11.7) ---
+
+
+class ResistanceCall(models.Model):
+    """One UL97/UL54 antiviral-resistance surveillance call, kept DISTINCT from
+    strain-identity genotyping so drug attribution is never pooled away. It rides
+    the SAME pipeline-run/result chain (`result` FK); subject, visit, and
+    sample-date are DERIVED through the tube (never stored), the slice-10
+    GenotypingResult precedent. The established-present bool, the active-failure
+    flag, and the tiered return-of-results flag are all derived @property
+    (derive-don't-store) so they can never drift from the three-tier variant data.
+    `qnat_iu_ml` is the QNAT at the call — a Decimal value, never a calendar date.
+
+    The locked two-locus list is enforced TWICE: a DB CheckConstraint plus the
+    friendly clean() mirror (the project enforce-twice idiom)."""
+
+    result = models.ForeignKey(
+        GenotypingResult, on_delete=models.PROTECT, related_name="resistance_calls"
+    )
+    locus = models.CharField(max_length=8, choices=RESISTANCE_LOCUS_CHOICES)
+    status = models.CharField(
+        max_length=1,
+        choices=SANGER_CALL_CHOICES,
+        help_text="R/F/N — the same Sanger taxonomy as a GenotypeCall.",
+    )
+    qnat_iu_ml = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="COBAS 5000 IU/mL viral load AT the call (amplification-floor context). "
+        "A value, never a date; null when no QNAT was recorded at the call.",
+    )
+    history = HistoricalRecords()
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                name="resistancecall_locus_is_ul97_or_ul54",
+                condition=models.Q(locus__in=RESISTANCE_LOCI),
+            ),
+        ]
+
+    def __str__(self):
+        return f"ResistanceCall {self.pk} ({self.locus} {self.status})"
+
+    def clean(self):
+        super().clean()
+        if self.locus not in RESISTANCE_LOCI:
+            raise ValidationError(f"locus must be one of {RESISTANCE_LOCI}.")
+
+    @property
+    def subject(self):
+        """Recipient derived THROUGH the tube — never a stored column. None when
+        the source aliquot has no visit anchor."""
+        return self.result.subject
+
+    @property
+    def visit(self):
+        """Recipient visit derived through the tube; None when unanchored."""
+        return self.result.aliquot.recipient_visit
+
+    @property
+    def sample_date(self):
+        """Sample date derived through the tube (the aliquot's collection date)."""
+        return self.result.sample_date
+
+    @property
+    def established_resistance_present(self):
+        """Derived, never stored: any variant on this call graded `established`."""
+        return any(v.tier == "established" for v in self.variants.all())
+
+    @property
+    def has_active_virological_failure(self):
+        """Viremic at the call — QNAT at/above the assay LoQ (the SAME positivity
+        bar episodes/attribution use). Derived, never stored."""
+        return is_active_virological_failure(self.qnat_iu_ml)
+
+    @property
+    def return_of_results_flag(self):
+        """The tiered duty-to-disclose flag — fires on EXACTLY the
+        established-resistance ∩ active-virological-failure intersection."""
+        return return_of_results(self.established_resistance_present, self.qnat_iu_ml)
+
+
+class ResistanceVariant(models.Model):
+    """One graded resistance variant on a `ResistanceCall`, stored LONG (1NF) — two
+    variants on one call are two rows, never collapsed (the GenotypeCall
+    precedent). `tier` is the curated three-tier interpretation."""
+
+    resistance_call = models.ForeignKey(
+        ResistanceCall, on_delete=models.CASCADE, related_name="variants"
+    )
+    variant = models.CharField(
+        max_length=32, help_text="Variant/mutation code, e.g. C592G, M460V."
+    )
+    tier = models.CharField(max_length=12, choices=RESISTANCE_TIER_CHOICES)
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return f"{self.variant} ({self.tier})"
