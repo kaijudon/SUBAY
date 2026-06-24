@@ -90,6 +90,74 @@ def _status_matches_value_constraint(name, value_field="value", status_field="re
     )
 
 
+class VerificationMixin(models.Model):
+    """Four-eyes verification for outcome-critical rows (US 68): a finalized
+    (`is_verified`) row needs a `verified_by` who DIFFERS from `entered_by`, plus a
+    `verified_at` timestamp. Enforced at BOTH layers — clean() for a friendly
+    admin/forms error and a DB CheckConstraint for an unbreakable guarantee on the
+    shell/ingest bare-save path — mirroring the GenotypeCall/ConsumptionEvent
+    dual-guard. Fields are nullable (DEC-023): the gate bites ONLY when
+    is_verified=True, so the many existing un-attributed fixtures keep passing.
+
+    Concrete models spread `verification_constraints(prefix)` into their own
+    Meta.constraints (DEC-024: an abstract base cannot carry per-model-unique
+    constraint names, and abstract FKs need a `%(class)s_…` related_name)."""
+
+    entered_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT,
+        related_name="%(class)s_entered",
+    )
+    verified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT,
+        related_name="%(class)s_verified",
+    )
+    verified_at = models.DateField(null=True, blank=True)
+    is_verified = models.BooleanField(default=False)
+
+    class Meta:
+        abstract = True
+
+    @staticmethod
+    def verification_constraints(prefix):
+        """The two CheckConstraints enforcing the four-eyes gate at the DB layer.
+        Both pass freely while is_verified=False; once verified they require a full,
+        differing attribution. `verified_at` (a DateField) is the drawn_date leak
+        shape — it must NEVER enter an export *_COLUMNS list."""
+        return [
+            models.CheckConstraint(
+                name=f"{prefix}_verified_requires_verifier",
+                condition=(
+                    models.Q(is_verified=False)
+                    | models.Q(
+                        entered_by__isnull=False,
+                        verified_by__isnull=False,
+                        verified_at__isnull=False,
+                    )
+                ),
+            ),
+            models.CheckConstraint(
+                name=f"{prefix}_verifier_differs_when_verified",
+                condition=(
+                    models.Q(is_verified=False)
+                    | ~models.Q(verified_by=models.F("entered_by"))
+                ),
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if not self.is_verified:
+            return
+        if self.entered_by_id is None or self.verified_by_id is None or self.verified_at is None:
+            raise ValidationError(
+                "A verified row requires entered_by, verified_by and verified_at."
+            )
+        if self.entered_by_id == self.verified_by_id:
+            raise ValidationError(
+                "The verifier must differ from the editor (entered_by != verified_by)."
+            )
+
+
 class AppendOnlyQuerySet(models.QuerySet):
     """Blocks `QuerySet.update()` from rewriting a model's declared write-once
     fields. clean() guards the normal save path, but a bulk `.update()` skips
@@ -512,7 +580,7 @@ class ExactlyOneParentMixin(models.Model):
             raise ValidationError("A missing observation must not carry a value.")
 
 
-class CMVSerology(ExactlyOneParentMixin):
+class CMVSerology(ExactlyOneParentMixin, VerificationMixin):
     """One lab result attached to EXACTLY ONE parent: a recipient visit OR a donor.
 
     Enforced twice: clean() for a friendly admin error, a DB CheckConstraint for an
@@ -584,6 +652,7 @@ class CMVSerology(ExactlyOneParentMixin):
             _status_matches_value_constraint(
                 "cmvserology_igm_value_matches_status", "igm_value", "igm_status"
             ),
+            *VerificationMixin.verification_constraints("cmvserology_verification"),
         ]
 
     @property
@@ -817,7 +886,7 @@ class RenalFunction(ExactlyOneParentMixin):
         self._validate_value_matches_status(self.serum_creatinine_mg_dl)
 
 
-class DrugLevel(ExactlyOneParentMixin):
+class DrugLevel(ExactlyOneParentMixin, VerificationMixin):
     """One immunosuppressant trough result, stored LONG — one row per result so a
     patient's repeating troughs form an ordered series (Meta.ordering by drawn_date).
     Standalone: no FK to any prescription/medication model (slice 08 is OUT) so the
@@ -863,6 +932,7 @@ class DrugLevel(ExactlyOneParentMixin):
                 ),
             ),
             _status_matches_value_constraint("druglevel_value_matches_result_status"),
+            *VerificationMixin.verification_constraints("druglevel_verification"),
         ]
 
     def clean(self):
@@ -997,11 +1067,13 @@ class MedicationCourse(models.Model):
             )
 
 
-class RejectionEpisode(models.Model):
+class RejectionEpisode(VerificationMixin):
     """One allograft-rejection episode on a recipient — mirrors the CMV-episode
     shape (onset/resolved dates, type, treatment). Carries the Banff vocabulary and
     a biopsy_proven flag. Suspected-vs-biopsy-proven inclusion is deferred (PRD):
-    the flag is modelled, never gated on here."""
+    the flag is modelled, never gated on here. As the one STORED, human-adjudicated
+    episode (Banff grade/type/resolution are clinician judgements), it carries the
+    four-eyes VerificationMixin for "episode adjudication" (US 68, DEC-021)."""
 
     recipient = models.ForeignKey(
         Recipient, on_delete=models.CASCADE, related_name="rejection_episodes"
@@ -1014,6 +1086,9 @@ class RejectionEpisode(models.Model):
     treatment = models.CharField(max_length=120, blank=True)
     resolved_date = models.DateField(null=True, blank=True, help_text="Null = unresolved.")
     history = HistoricalRecords()
+
+    class Meta:
+        constraints = VerificationMixin.verification_constraints("rejectionepisode_verification")
 
     def __str__(self):
         return f"{self.recipient_id} {self.rejection_type} @ {self.onset_date}"
@@ -1341,12 +1416,14 @@ class GenotypingResult(models.Model):
         return detail.rollup if detail is not None else ""
 
 
-class GenotypeCall(models.Model):
+class GenotypeCall(VerificationMixin):
     """One allele call, stored LONG (first normal form) — a mixed infection is
     multiple rows for the same result/locus, never collapsed by a unique
-    constraint. No call is finalized (`is_locked`) without a second-reviewer lock
+    constraint. No call is finalized (`is_verified`) without a second-reviewer lock
     set by a DIFFERENT user, enforced at BOTH the app layer (clean()) and the DB
-    layer (two CheckConstraints), mirroring the ConsumptionEvent dual-guard."""
+    layer (two CheckConstraints), mirroring the ConsumptionEvent dual-guard. The
+    four-eyes gate is the shared VerificationMixin (US 68, DEC-022): `is_locked`/
+    `reviewed_by`/`reviewed_at` became `is_verified`/`verified_by`/`verified_at`."""
 
     result = models.ForeignKey(
         GenotypingResult, on_delete=models.CASCADE, related_name="calls"
@@ -1357,62 +1434,28 @@ class GenotypeCall(models.Model):
         max_length=1, choices=SANGER_CALL_CHOICES, null=True, blank=True,
         help_text="Sanger R/F/N taxonomy; null for a qPCR-derived call.",
     )
-    entered_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.PROTECT,
-        related_name="genotype_calls_entered",
-    )
-    reviewed_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        null=True,
-        blank=True,
-        on_delete=models.PROTECT,
-        related_name="genotype_calls_reviewed",
-    )
-    reviewed_at = models.DateField(null=True, blank=True)
-    is_locked = models.BooleanField(default=False)
     history = HistoricalRecords()
 
     class Meta:
-        constraints = [
-            models.CheckConstraint(
-                name="genotypecall_locked_requires_reviewer",
-                condition=(
-                    models.Q(is_locked=False)
-                    | models.Q(reviewed_by__isnull=False, reviewed_at__isnull=False)
-                ),
-            ),
-            models.CheckConstraint(
-                name="genotypecall_reviewer_differs_when_locked",
-                condition=(
-                    models.Q(is_locked=False)
-                    | ~models.Q(reviewed_by=models.F("entered_by"))
-                ),
-            ),
-        ]
+        constraints = VerificationMixin.verification_constraints("genotypecall_verification")
 
     def __str__(self):
         return f"{self.locus}={self.allele}"
 
     def clean(self):
-        super().clean()
-        if self.is_locked:
-            if self.reviewed_by_id is None or self.reviewed_at is None:
-                raise ValidationError("A locked call requires reviewed_by and reviewed_at.")
-            if self.entered_by_id == self.reviewed_by_id:
-                raise ValidationError("The second reviewer must differ from the editor.")
-        # Once locked, the call is frozen: its allele content cannot be edited
+        super().clean()  # the mixin's four-eyes gate runs first
+        # Once verified, the call is frozen: its allele content cannot be edited
         # (SangerDetail append-only precedent). Freeze keys off the STORED lock so
         # an unlock-and-edit cannot slip a change through.
         if self.pk is not None:
             stored = GenotypeCall.objects.get(pk=self.pk)
-            if stored.is_locked and (
+            if stored.is_verified and (
                 stored.locus != self.locus
                 or stored.allele != self.allele
                 or stored.sanger_call != self.sanger_call
             ):
                 raise ValidationError(
-                    "A locked call is frozen; locus/allele/sanger_call cannot be changed."
+                    "A verified call is frozen; locus/allele/sanger_call cannot be changed."
                 )
 
 
