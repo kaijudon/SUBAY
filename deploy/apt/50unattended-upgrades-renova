@@ -1,0 +1,24 @@
+// RENOVA — unattended security upgrades, but NEVER auto-reboot (Slice 15, AC4).
+// Install at /etc/apt/apt.conf.d/50unattended-upgrades-renova.
+//
+// WHY: security patches should land automatically. But this box has a LUKS-encrypted
+// disk whose passphrase is typed by a human at the console (AC4). An automatic reboot
+// would hang at the passphrase prompt with the database OFFLINE and nobody there.
+// So: auto-INSTALL yes, auto-REBOOT no. Reboots are operator-gated (see RUNBOOK §4).
+
+Unattended-Upgrade::Allowed-Origins {
+    "${distro_id}:${distro_codename}-security";
+    "${distro_id}ESMApps:${distro_codename}-apps-security";
+    "${distro_id}ESM:${distro_codename}-infra-security";
+};
+
+// The critical line: do NOT let the machine reboot itself.
+Unattended-Upgrade::Automatic-Reboot "false";
+
+// Email the operator when a reboot is REQUIRED so a human can schedule it.
+Unattended-Upgrade::Mail "operator@example.org";
+Unattended-Upgrade::MailReport "on-change";
+
+// Don't let a half-applied upgrade wedge dpkg.
+Unattended-Upgrade::AutoFixInterruptedDpkg "true";
+Unattended-Upgrade::MinimalSteps "true";

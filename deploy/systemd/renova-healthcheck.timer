@@ -1,0 +1,10 @@
+# RENOVA — monitoring schedule (Slice 15, AC6). Every 15 min. enable --now this timer.
+[Unit]
+Description=RENOVA healthcheck every 15 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+
+[Install]
+WantedBy=timers.target

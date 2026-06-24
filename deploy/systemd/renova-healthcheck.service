@@ -1,0 +1,10 @@
+# RENOVA — monitoring unit (Slice 15, AC6). Pairs with renova-healthcheck.timer.
+[Unit]
+Description=RENOVA push-on-failure healthcheck
+
+[Service]
+Type=oneshot
+User=renova
+Group=renova
+EnvironmentFile=/etc/renova/renova.env
+ExecStart=/opt/renova/deploy/bin/healthcheck.sh

@@ -44,3 +44,8 @@ Deferred to Slice 15: LUKS full-disk, pgcrypto on sensitive columns, key-only SS
 + fail2ban + UFW, the pg_dump-before-migrate wrapper, operator-gated reboots + UPS,
 the three-part backup with a quarterly restore drill, push-on-failure monitoring,
 and the sealed-credentials bus-factor procedure.
+
+Those Slice 15 artifacts now live alongside these files — see **`RUNBOOK.md`** (the
+HITL procedure, mapped 1:1 to the acceptance criteria) and **`CHECKLIST.md`** (the
+build-time tick-list). They are drafts for human execution + DPO sign-off on the real
+box; they are **not** merged AFK.
