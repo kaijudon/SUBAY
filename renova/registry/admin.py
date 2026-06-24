@@ -17,6 +17,7 @@ from .models import (
     MedicationCourse,
     OtherCondition,
     PipelineRun,
+    ProtocolDeviation,
     QpcrDetail,
     QpcrProbeReading,
     Recipient,
@@ -24,6 +25,7 @@ from .models import (
     ReferenceAccession,
     ReferenceSet,
     RejectionEpisode,
+    ReleaseEvent,
     RenalFunction,
     SangerDetail,
     SequencingAliquot,
@@ -173,8 +175,9 @@ class CMVSerologyAdmin(_EditorDefaultedAdmin):
 class CMVQuantitativeAdmin(SimpleHistoryAdmin):
     list_display = (
         "id", "recipient_visit", "donor", "value", "severity_tier", "result_status",
-        "drawn_date",
+        "drawn_date", "release_overdue",
     )
+    readonly_fields = ("release_overdue",)  # derived Safety-Monitor flag, never stored
 
 
 @admin.register(TBNKPanel)
@@ -361,3 +364,21 @@ class ConcordancePairAdmin(SimpleHistoryAdmin):
     )
     # the grader's outputs are computed, never editable
     readonly_fields = ("suggested_concordance_call", "co_resolved_count", "comparator_subject")
+
+
+# --- Slice 14: safety release-timeliness surface (Safety Monitor) ---
+
+
+@admin.register(ReleaseEvent)
+class ReleaseEventAdmin(SimpleHistoryAdmin):
+    list_display = ("id", "quantitative", "released_date", "recipient")
+    readonly_fields = ("recipient",)  # derived through the tube, never stored
+
+
+@admin.register(ProtocolDeviation)
+class ProtocolDeviationAdmin(SimpleHistoryAdmin):
+    list_display = (
+        "id", "quantitative", "deviation_type", "caused_harm",
+        "is_research_related_sae", "recorded_date",
+    )
+    readonly_fields = ("recipient",)  # derived through the tube, never stored
