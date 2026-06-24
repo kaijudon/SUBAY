@@ -23,6 +23,7 @@ from renova.registry.resistance import (
     is_active_virological_failure,
     return_of_results,
     rollup_by_locus,
+    subject_rollup,
 )
 from renova.registry.models import (
     RESISTANCE_LOCUS_CHOICES,
@@ -112,6 +113,34 @@ def test_rollup_ignores_unknown_locus_never_pools():
     assert rollup["UL97"].n_total == 1
     assert rollup["UL97"].established_present is False
     assert rollup["UL54"].n_total == 0
+
+
+def test_subject_rollup_groups_by_subject_keeps_loci_separate():
+    # AC2: a per-SUBJECT rollup, still per-locus, UL97 never pooled into UL54 and
+    # one subject's counts never bleeding into another's.
+    calls = [
+        ("SCMVR01", "UL97", "R", True),
+        ("SCMVR01", "UL97", "F", False),
+        ("SCMVR01", "UL54", "R", False),
+        ("SCMVR02", "UL97", "F", False),
+    ]
+    out = subject_rollup(calls)
+    assert set(out) == {"SCMVR01", "SCMVR02"}
+    # SCMVR01: separate per-locus denominators
+    assert out["SCMVR01"]["UL97"].r_bucket == 1
+    assert out["SCMVR01"]["UL97"].n_total == 2
+    assert out["SCMVR01"]["UL97"].established_present is True
+    assert out["SCMVR01"]["UL54"].r_bucket == 1
+    assert out["SCMVR01"]["UL54"].n_total == 1
+    assert out["SCMVR01"]["UL54"].established_present is False
+    # SCMVR02 counts never pool into SCMVR01; both loci always present per subject
+    assert out["SCMVR02"]["UL97"].r_bucket == 0
+    assert out["SCMVR02"]["UL97"].n_total == 1
+    assert out["SCMVR02"]["UL54"].n_total == 0
+
+
+def test_subject_rollup_empty_is_empty():
+    assert subject_rollup([]) == {}
 
 
 # --- Steps 2 & 3: ResistanceCall + ResistanceVariant models ---

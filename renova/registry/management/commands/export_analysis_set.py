@@ -43,6 +43,8 @@ from renova.registry.models import (
     GenotypingResult,
     GenotypeCall,
     ConcordancePair,
+    ResistanceCall,
+    ResistanceVariant,
 )
 
 # A bare calendar date should never appear in any output file. Day-offsets are
@@ -321,6 +323,36 @@ CONCORDANCELOCUS_COLUMNS = [
 ]
 
 
+# Antiviral-resistance surveillance (Slice 12). Kept in its OWN file, deliberately
+# SEPARATE from the strain-identity concordance locus table, so ganciclovir-only
+# (UL97) and cross-resistance (UL54) attribution is never pooled with strain
+# identity (the load-bearing AC4 separation). subject + sample-date are DERIVED
+# through the tube (the slice-10 GenotypingResult precedent); the sample date
+# leaves only as a day-offset from the recipient's kt_date (blank when the source
+# aliquot has no visit anchor). established_resistance_present and
+# return_of_results_flag are the materialized derived @property values. qnat_iu_ml
+# is the QNAT IU/mL AT the call — a value, never a calendar date.
+RESISTANCECALL_COLUMNS = [
+    ("id", "i"),
+    ("subject", "c"),
+    ("locus", "c"),
+    ("status", "c"),  # R/F/N
+    ("established_resistance_present", "c"),  # derived bool
+    ("return_of_results_flag", "c"),  # derived duty-to-disclose intersection bool
+    ("qnat_iu_ml", "d"),
+    ("sample_day_offset", "i"),
+]
+# The three-tier variant grading, stored LONG (one row per variant, the
+# GenotypeCall precedent). `variant` is standard mutation nomenclature (e.g.
+# C592G) — de-identified, and still swept by the leak gate.
+RESISTANCEVARIANT_COLUMNS = [
+    ("id", "i"),
+    ("resistance_call", "i"),
+    ("variant", "c"),
+    ("tier", "c"),  # established / polymorphism / unknown
+]
+
+
 def _offset(d, kt_date):
     """Integer days from transplant (day 0). Negative for pre-KT dates."""
     return (d - kt_date).days
@@ -370,6 +402,8 @@ class Command(BaseCommand):
             self._write_genotype_calls(staging)
             self._write_concordance_pairs(staging)
             self._write_concordance_loci(staging)
+            self._write_resistance_calls(staging)
+            self._write_resistance_variants(staging)
             self._write_manifest(staging, version)
             self._assert_no_identifier_leak(staging)
         except Exception:
@@ -707,6 +741,37 @@ class Command(BaseCommand):
                         STRAIN_IDENTITY_NOTE if is_resistance(locus) else "",
                     ])
 
+    def _write_resistance_calls(self, base):
+        with (base / "resistancecall.csv").open("w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow([name for name, _ in RESISTANCECALL_COLUMNS])
+            qs = ResistanceCall.objects.select_related(
+                "result__aliquot__recipient_visit__recipient"
+            ).prefetch_related("variants").order_by("pk")
+            for c in qs:
+                # subject + sample date are derived THROUGH the tube; the date only
+                # ever leaves as an offset (blank when the straw has no kt anchor).
+                recipient = c.subject
+                if recipient is not None:
+                    subject_cell = recipient.subject_id
+                    offset = _offset(c.sample_date, recipient.kt_date)
+                else:
+                    subject_cell, offset = "", ""
+                qnat_cell = c.qnat_iu_ml if c.qnat_iu_ml is not None else ""
+                w.writerow([
+                    c.id, subject_cell, c.locus, c.status,
+                    _bool3(c.established_resistance_present),
+                    _bool3(c.return_of_results_flag),
+                    qnat_cell, offset,
+                ])
+
+    def _write_resistance_variants(self, base):
+        with (base / "resistancevariant.csv").open("w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow([name for name, _ in RESISTANCEVARIANT_COLUMNS])
+            for v in ResistanceVariant.objects.order_by("pk"):
+                w.writerow([v.id, v.resistance_call_id, v.variant, v.tier])
+
     def _write_manifest(self, base, version):
         specs = {
             "recipient.csv": RECIPIENT_COLUMNS,
@@ -728,6 +793,8 @@ class Command(BaseCommand):
             "genotypecall.csv": GENOTYPECALL_COLUMNS,
             "concordancepair.csv": CONCORDANCEPAIR_COLUMNS,
             "concordancelocus.csv": CONCORDANCELOCUS_COLUMNS,
+            "resistancecall.csv": RESISTANCECALL_COLUMNS,
+            "resistancevariant.csv": RESISTANCEVARIANT_COLUMNS,
         }
         files = {}
         for name, columns in specs.items():

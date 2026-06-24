@@ -83,3 +83,16 @@ def rollup_by_locus(calls) -> dict[str, LocusRollup]:
         locus: LocusRollup(r_bucket[locus], n_total[locus], established[locus])
         for locus in RESISTANCE_LOCI
     }
+
+
+def subject_rollup(calls) -> dict[str, dict[str, LocusRollup]]:
+    """Per-SUBJECT surveillance rollup (AC2). Groups `calls` by subject, then
+    applies `rollup_by_locus` WITHIN each subject — so every subject gets its own
+    separate UL97/UL54 R-bucket denominators (ganciclovir-only vs cross-resistance
+    stay separable) and one subject's counts never bleed into another's. `calls`
+    are `(subject, locus, status, established_present)` tuples; an empty input
+    yields an empty mapping (no subjects, never fabricated rows)."""
+    by_subject: dict[str, list] = {}
+    for subject, locus, status, established in calls:
+        by_subject.setdefault(subject, []).append((locus, status, established))
+    return {subject: rollup_by_locus(rows) for subject, rows in by_subject.items()}
