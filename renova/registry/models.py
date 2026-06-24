@@ -32,6 +32,8 @@ from .resistance import (
     return_of_results,
     rollup_by_locus,
 )
+from . import safety
+from .safety import RELEASE_THRESHOLD_IU_ML, SYMPTOMATIC_TIERS
 from .scheduling import TIMEPOINT_OFFSETS, ClosureDayLike, first_operating_day
 from .validators import subject_id_validator
 
@@ -678,6 +680,34 @@ class CMVSerology(ExactlyOneParentMixin, VerificationMixin):
             raise ValidationError("A missing IgM observation must not carry a value.")
 
 
+# Slice 14 — protocol-deviation kinds (a missed or late safety release). Two
+# values only, enforced via choices; the structured signal carries the analyzable
+# content (no free text exported).
+DEVIATION_TYPE_CHOICES = [("late_release", "Late release"), ("missed_release", "Missed release")]
+
+
+class CMVQuantitativeQuerySet(models.QuerySet):
+    """Standing-query surface for the safety release-timeliness flag (Slice 14)."""
+
+    def requiring_release(self):
+        """REPORTED, recipient-attached draws that need a logged release-event:
+        high-viral-load OR symptomatic. Donor-attached draws (no kt anchor) are
+        excluded, mirroring Recipient._reported_qnat_points."""
+        return self.filter(
+            result_status="reported", recipient_visit__isnull=False
+        ).filter(
+            models.Q(value__gte=RELEASE_THRESHOLD_IU_ML)
+            | models.Q(severity_tier__in=SYMPTOMATIC_TIERS)
+        )
+
+    def overdue_release_flags(self):
+        """The standing query (AC1/AC4): the requiring-release draws whose release
+        is overdue, computed purely from stored value/severity_tier/ReleaseEvent
+        rows — never a hand-maintained list."""
+        qs = self.requiring_release().prefetch_related("release_events")
+        return [q for q in qs if q.release_overdue]
+
+
 class CMVQuantitative(ExactlyOneParentMixin):
     """One CMV viral-load measurement, stored LONG — one row per result so a
     patient's repeating draws form an ordered series (Meta.ordering by drawn_date)
@@ -730,6 +760,8 @@ class CMVQuantitative(ExactlyOneParentMixin):
     drawn_date = models.DateField()
     history = HistoricalRecords()
 
+    objects = CMVQuantitativeQuerySet.as_manager()
+
     class Meta:
         # Chronological so the episode deriver reads an ordered series.
         ordering = ["drawn_date", "pk"]
@@ -747,6 +779,29 @@ class CMVQuantitative(ExactlyOneParentMixin):
     def clean(self):
         super().clean()
         self._validate_value_matches_status(self.value)
+
+    # --- Slice 14: safety release-timeliness flags (derived, never stored) ---
+
+    @property
+    def requires_release(self):
+        """High-viral-load OR symptomatic — needs a logged release-event (AC1)."""
+        return safety.requires_release(self.value, self.severity_tier)
+
+    @property
+    def has_timely_release(self):
+        """Any release logged inside the 24h (day-granular) window. Offsets are
+        days from THIS draw, so timeliness needs no kt anchor."""
+        released_offsets = [(e.released_date - self.drawn_date).days for e in self.release_events.all()]
+        return safety.is_release_timely(0, released_offsets, safety.RELEASE_WINDOW_DAYS)
+
+    @property
+    def release_overdue(self):
+        """The Safety-Monitor flag: a reported draw that requires a release and has
+        no timely one. Only meaningful for a reported result (a missing observation
+        is a QC failure, not an actionable result)."""
+        if self.result_status != "reported":
+            return False
+        return self.requires_release and not self.has_timely_release
 
 
 class TBNKPanel(ExactlyOneParentMixin):
@@ -1824,3 +1879,64 @@ class ResistanceVariant(models.Model):
 
     def __str__(self):
         return f"{self.variant} ({self.tier})"
+
+
+class ReleaseEvent(models.Model):
+    """One logged safety release-event for a viral-load draw (Slice 14). The
+    timeliness flag on `CMVQuantitative` reads these; the recipient/kt anchor is
+    DERIVED THROUGH THE TUBE (quantitative.recipient_visit.recipient), never stored.
+    A release cannot predate its draw."""
+
+    quantitative = models.ForeignKey(
+        CMVQuantitative, on_delete=models.CASCADE, related_name="release_events"
+    )
+    released_date = models.DateField()
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return f"ReleaseEvent {self.pk} (qnat {self.quantitative_id})"
+
+    def clean(self):
+        super().clean()
+        if self.released_date < self.quantitative.drawn_date:
+            raise ValidationError("released_date cannot predate the draw's drawn_date.")
+
+    @property
+    def recipient(self):
+        """Recipient derived through the tube; None for a donor-attached draw."""
+        visit = self.quantitative.recipient_visit
+        return visit.recipient if visit is not None else None
+
+
+class ProtocolDeviation(models.Model):
+    """A missed/late safety release recorded as a protocol deviation, and —
+    additionally, dual-track — as a research-related SAE WHEN it caused harm
+    (Slice 14). One lightweight model, two separately countable booleans (not two
+    linked models); clean() enforces SAE ⇒ harm. Recipient/kt anchor derived
+    through the tube, never stored."""
+
+    quantitative = models.ForeignKey(
+        CMVQuantitative, on_delete=models.CASCADE, related_name="protocol_deviations"
+    )
+    deviation_type = models.CharField(max_length=16, choices=DEVIATION_TYPE_CHOICES)
+    caused_harm = models.BooleanField(default=False)
+    is_research_related_sae = models.BooleanField(default=False)
+    recorded_date = models.DateField(null=True, blank=True)
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return f"ProtocolDeviation {self.pk} ({self.deviation_type})"
+
+    def clean(self):
+        super().clean()
+        if self.is_research_related_sae and not self.caused_harm:
+            raise ValidationError(
+                "A research-related SAE requires caused_harm=True (an SAE is recorded "
+                "only when the deviation caused harm)."
+            )
+
+    @property
+    def recipient(self):
+        """Recipient derived through the tube; None for a donor-attached draw."""
+        visit = self.quantitative.recipient_visit
+        return visit.recipient if visit is not None else None

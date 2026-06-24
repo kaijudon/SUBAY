@@ -45,6 +45,8 @@ from renova.registry.models import (
     ConcordancePair,
     ResistanceCall,
     ResistanceVariant,
+    ReleaseEvent,
+    ProtocolDeviation,
 )
 
 # A bare calendar date should never appear in any output file. Day-offsets are
@@ -353,6 +355,29 @@ RESISTANCEVARIANT_COLUMNS = [
 ]
 
 
+# Safety release-timeliness surface (Slice 14). The release-event and the dual-track
+# protocol-deviation/SAE rows leave only as day-offsets from the recipient's kt_date
+# (blank when the parent QNAT is donor-attached — the donor/DonorVisit precedent).
+# recipient is derived THROUGH THE TUBE (quantitative.recipient_visit.recipient),
+# never stored. No free-text field is exported (leak vector); the structured
+# deviation_type enum and the two boolean tracks carry the analyzable content.
+RELEASEEVENT_COLUMNS = [
+    ("id", "i"),
+    ("recipient", "c"),
+    ("quantitative", "i"),
+    ("released_day_offset", "i"),
+]
+PROTOCOLDEVIATION_COLUMNS = [
+    ("id", "i"),
+    ("recipient", "c"),
+    ("quantitative", "i"),
+    ("deviation_type", "c"),  # late_release / missed_release (choice-constrained)
+    ("caused_harm", "c"),
+    ("is_research_related_sae", "c"),
+    ("recorded_day_offset", "i"),
+]
+
+
 def _offset(d, kt_date):
     """Integer days from transplant (day 0). Negative for pre-KT dates."""
     return (d - kt_date).days
@@ -404,6 +429,8 @@ class Command(BaseCommand):
             self._write_concordance_loci(staging)
             self._write_resistance_calls(staging)
             self._write_resistance_variants(staging)
+            self._write_release_events(staging)
+            self._write_protocol_deviations(staging)
             self._write_manifest(staging, version)
             self._assert_no_identifier_leak(staging)
         except Exception:
@@ -772,6 +799,44 @@ class Command(BaseCommand):
             for v in ResistanceVariant.objects.order_by("pk"):
                 w.writerow([v.id, v.resistance_call_id, v.variant, v.tier])
 
+    def _write_release_events(self, base):
+        with (base / "releaseevent.csv").open("w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow([name for name, _ in RELEASEEVENT_COLUMNS])
+            qs = ReleaseEvent.objects.select_related(
+                "quantitative__recipient_visit__recipient"
+            ).order_by("pk")
+            for e in qs:
+                # recipient + offset derived THROUGH the tube; the date only ever
+                # leaves as an offset (blank when the parent QNAT has no kt anchor).
+                recipient = e.recipient
+                if recipient is not None:
+                    recipient_cell = recipient.subject_id
+                    released_off = _offset(e.released_date, recipient.kt_date)
+                else:
+                    recipient_cell, released_off = "", ""
+                w.writerow([e.id, recipient_cell, e.quantitative_id, released_off])
+
+    def _write_protocol_deviations(self, base):
+        with (base / "protocoldeviation.csv").open("w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow([name for name, _ in PROTOCOLDEVIATION_COLUMNS])
+            qs = ProtocolDeviation.objects.select_related(
+                "quantitative__recipient_visit__recipient"
+            ).order_by("pk")
+            for d in qs:
+                recipient = d.recipient
+                recipient_cell = recipient.subject_id if recipient is not None else ""
+                # recorded_date is optional; blank offset when absent or unanchored.
+                if recipient is not None and d.recorded_date is not None:
+                    recorded_off = _offset(d.recorded_date, recipient.kt_date)
+                else:
+                    recorded_off = ""
+                w.writerow([
+                    d.id, recipient_cell, d.quantitative_id, d.deviation_type,
+                    _bool3(d.caused_harm), _bool3(d.is_research_related_sae), recorded_off,
+                ])
+
     def _write_manifest(self, base, version):
         specs = {
             "recipient.csv": RECIPIENT_COLUMNS,
@@ -795,6 +860,8 @@ class Command(BaseCommand):
             "concordancelocus.csv": CONCORDANCELOCUS_COLUMNS,
             "resistancecall.csv": RESISTANCECALL_COLUMNS,
             "resistancevariant.csv": RESISTANCEVARIANT_COLUMNS,
+            "releaseevent.csv": RELEASEEVENT_COLUMNS,
+            "protocoldeviation.csv": PROTOCOLDEVIATION_COLUMNS,
         }
         files = {}
         for name, columns in specs.items():
