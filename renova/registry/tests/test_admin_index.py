@@ -331,6 +331,120 @@ def test_outcome_critical_models_expose_verified_filter():
         assert "is_verified" in djadmin.site._registry[model].list_filter
 
 
+# --- Front-end 5 (issue #6): Safety Monitor release-timeliness worklist ---
+
+SAFETY_URL = "/admin/safety-worklist/"
+
+
+def _seed_release_flags():
+    """One overdue QNAT (high viral load, no release), one sub-threshold
+    asymptomatic QNAT (never requires release), and one high QNAT WITH a timely
+    release. Only the first is release_overdue. Returns the overdue QNAT."""
+    from datetime import date
+    from decimal import Decimal
+    from renova.registry.models import (
+        CMVQuantitative, Recipient, RecipientVisit, ReleaseEvent,
+    )
+
+    rec = Recipient.objects.create(
+        subject_id="SCMVR61", date_of_birth=date(1980, 1, 1), sex="M",
+        kt_date=date(2025, 1, 1),
+    )
+    visit = RecipientVisit.objects.create(
+        recipient=rec, timepoint_label="day_30", actual_visit_date=date(2025, 2, 1),
+    )
+    overdue = CMVQuantitative.objects.create(
+        recipient_visit=visit, value=Decimal("50000"), result_status="reported",
+        drawn_date=date(2025, 2, 1),
+    )
+    # sub-threshold + asymptomatic → never requires a release
+    CMVQuantitative.objects.create(
+        recipient_visit=visit, value=Decimal("100"), result_status="reported",
+        drawn_date=date(2025, 2, 2),
+    )
+    # high, but a release logged same day (inside the window) → timely, not overdue
+    timely = CMVQuantitative.objects.create(
+        recipient_visit=visit, value=Decimal("40000"), result_status="reported",
+        drawn_date=date(2025, 2, 3),
+    )
+    ReleaseEvent.objects.create(quantitative=timely, released_date=date(2025, 2, 3))
+    return overdue
+
+
+@pytest.mark.django_db
+def test_safety_worklist_lists_only_release_overdue_rows():
+    monitor = _role_user("mon6", "data_manager")  # has add on the safety models
+    overdue = _seed_release_flags()
+
+    resp = _otp_client(monitor).get(SAFETY_URL)
+    assert resp.status_code == 200
+    rows = resp.context["rows"]
+    # exactly the one overdue QNAT — sub-threshold and timely-released are excluded
+    assert resp.context["total"] == 1
+    assert rows[0]["change_url"] == reverse(
+        "admin:registry_cmvquantitative_change", args=[overdue.pk]
+    )
+    # dual-track deep-links, each FK-anchored to this QNAT
+    assert rows[0]["release_url"] == (
+        reverse("admin:registry_releaseevent_add") + f"?quantitative={overdue.pk}"
+    )
+    assert rows[0]["deviation_url"] == (
+        reverse("admin:registry_protocoldeviation_add") + f"?quantitative={overdue.pk}"
+    )
+
+
+@pytest.mark.django_db
+def test_logging_release_event_removes_row_from_worklist():
+    from datetime import date
+    from renova.registry.models import ReleaseEvent
+
+    monitor = _role_user("mon6b", "data_manager")
+    overdue = _seed_release_flags()
+    client = _otp_client(monitor)
+
+    assert client.get(SAFETY_URL).context["total"] == 1
+    # log a release inside the window → the derived flag flips, row leaves
+    ReleaseEvent.objects.create(quantitative=overdue, released_date=date(2025, 2, 1))
+    assert client.get(SAFETY_URL).context["total"] == 0
+
+
+@pytest.mark.django_db
+def test_safety_worklist_is_permission_gated_to_monitors():
+    from django.test import Client
+
+    monitor = _role_user("mon6c", "data_manager")       # add on safety models
+    analyst = _role_user("ana6c", "data_analyst")        # view only
+    reviewer = _role_user("doc6c", "reviewing_clinician")  # no add on safety models
+
+    assert _otp_client(monitor).get(SAFETY_URL).status_code == 200
+    assert _otp_client(analyst).get(SAFETY_URL).status_code == 403
+    assert _otp_client(reviewer).get(SAFETY_URL).status_code == 403
+    assert Client().get(SAFETY_URL).status_code in (301, 302)
+
+
+@pytest.mark.django_db
+def test_index_surfaces_safety_worklist_link_only_for_monitors():
+    monitor_apps = _app_list(_role_user("mon6d", "data_manager"))
+    review = _section(monitor_apps, "Review")
+    assert review is not None
+    names = {m["name"] for m in review["models"]}
+    assert "Release-timeliness worklist" in names
+    assert any(
+        m["admin_url"] == SAFETY_URL for m in review["models"]
+    )
+
+    # the reviewing clinician's Review has the verification queue but NOT the
+    # safety worklist — the two gates are independent.
+    reviewer_apps = _app_list(_role_user("doc6d", "reviewing_clinician"))
+    r_review = _section(reviewer_apps, "Review")
+    r_names = {m["name"] for m in r_review["models"]}
+    assert "Verification worklist" in r_names
+    assert "Release-timeliness worklist" not in r_names
+
+    # the view-only analyst gets no Review section at all
+    assert _section(_app_list(_role_user("ana6d", "data_analyst")), "Review") is None
+
+
 @pytest.mark.django_db
 def test_no_model_moved_between_apps():
     """Grouping is site-level presentation: every registry model still reports
