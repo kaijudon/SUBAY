@@ -1,4 +1,10 @@
+from django.urls import path, reverse
 from django_otp.admin import OTPAdminSite
+
+# Front-end 4 (issue #5): the outcome-critical (four-eyes) models. Their
+# entered-but-unverified rows are exactly what the Reviewing Clinician worklist
+# surfaces; the same set the RBAC change-grant keys on (migration 0019).
+OUTCOME_CRITICAL = ["cmvserology", "druglevel", "rejectionepisode", "genotypecall"]
 
 # Front-end 3 (issue #3): the admin index is grouped by STUDY WORKFLOW, in the
 # order the operator works, instead of one flat alphabetical wall. Membership is
@@ -44,6 +50,74 @@ class RenovaAdminSite(OTPAdminSite):
             "models": models,
         }
 
+    # --- Front-end 4 (issue #5): Reviewing Clinician verification worklist ---
+
+    def _can_verify(self, request):
+        """True when the user may verify at least one outcome-critical model.
+        Gating on the change permission (not a hardcoded group name) keeps role
+        scoping as pure Django perms: the reviewing_clinician Group is granted
+        change on these models (0019), the view-only analyst is not — so the
+        worklist surfaces for the reviewer and stays hidden from the analyst
+        without any bespoke role code."""
+        return any(
+            request.user.has_perm(f"registry.change_{model}")
+            for model in OUTCOME_CRITICAL
+        )
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom = [
+            path(
+                "verification-worklist/",
+                self.admin_view(self.verification_worklist_view),
+                name="verification_worklist",
+            ),
+        ]
+        # custom URLs first so the named route resolves before any catch-all.
+        return custom + urls
+
+    def verification_worklist_view(self, request):
+        """One queue of exactly the entered-but-unverified outcome-critical rows,
+        each linking to its change page (where the verification fields wait). A
+        verified row (is_verified=True) is excluded by construction. admin_view()
+        already enforced login + staff + TOTP; this adds the verify permission."""
+        from django.apps import apps
+        from django.core.exceptions import PermissionDenied
+        from django.template.response import TemplateResponse
+
+        if not self._can_verify(request):
+            raise PermissionDenied
+
+        groups = []
+        total = 0
+        for label in OUTCOME_CRITICAL:
+            model = apps.get_model("registry", label)
+            rows = []
+            for obj in model.objects.filter(is_verified=False).order_by("pk"):
+                rows.append({
+                    "label": str(obj),
+                    "entered_by": obj.entered_by,
+                    "url": reverse(
+                        f"admin:registry_{label}_change", args=[obj.pk]
+                    ),
+                })
+            total += len(rows)
+            groups.append({
+                "title": model._meta.verbose_name_plural,
+                "changelist_url": reverse(f"admin:registry_{label}_changelist"),
+                "rows": rows,
+            })
+
+        context = {
+            **self.each_context(request),
+            "title": "Verification worklist",
+            "groups": groups,
+            "total": total,
+        }
+        return TemplateResponse(
+            request, "admin/registry/verification_worklist.html", context
+        )
+
     def get_app_list(self, request, app_label=None):
         """Regroup the index by workflow section. Role scoping is inherited:
         _build_app_dict already drops models the user has no permission for, so a
@@ -67,6 +141,19 @@ class RenovaAdminSite(OTPAdminSite):
             placed.update(n for n in names if n in by_name)
             if models:
                 app_list.append(self._section(section, models))
+
+        # Reviewing Clinician worklist: a synthetic index row (same shape the
+        # template renders real models as) linking to the queue view. Only for
+        # users who may verify — so it rides the same permission gate as the view.
+        if self._can_verify(request):
+            app_list.append(self._section("Review", [{
+                "name": "Verification worklist",
+                "object_name": "VerificationWorklist",
+                "perms": {"add": False, "change": True, "delete": False, "view": True},
+                "admin_url": reverse("admin:verification_worklist"),
+                "add_url": None,
+                "view_only": True,
+            }]))
 
         leftovers = [m for n, m in by_name.items() if n not in placed]
         if leftovers:
