@@ -278,6 +278,52 @@ def test_risk_stratum_filter_queryset_mirrors_the_derived_property(recipients):
     assert list(lo.queryset(_RF.get("/"), Recipient.objects.all())) == [low]
 
 
+# --- Front-end 2 (issue #4): lab & clinical-event ergonomics -------------
+
+
+def test_lab_admins_autocomplete_visit_and_subject_fks():
+    for model in (CMVSerology, CMVQuantitative, TBNKPanel, RenalFunction, DrugLevel):
+        ma = admin.site._registry[model]
+        assert "recipient_visit" in ma.autocomplete_fields
+        assert "donor" in ma.autocomplete_fields
+
+
+def test_clinical_event_admins_autocomplete_recipient():
+    for model in (OtherCondition, MedicationCourse, RejectionEpisode, Hospitalization):
+        assert "recipient" in admin.site._registry[model].autocomplete_fields
+
+
+def test_biobank_and_genotyping_autocomplete_and_target_search_fields():
+    from renova.registry.models import GenotypeCall, GenotypingResult, PipelineRun
+
+    assert "aliquot" in admin.site._registry[ThawEvent].autocomplete_fields
+    assert "aliquot" in admin.site._registry[ConsumptionEvent].autocomplete_fields
+    gr = admin.site._registry[GenotypingResult]
+    assert "aliquot" in gr.autocomplete_fields
+    assert "result" in admin.site._registry[GenotypeCall].autocomplete_fields
+    # every autocomplete target must declare search_fields or Django raises E040
+    assert admin.site._registry[Aliquot].search_fields
+    assert admin.site._registry[GenotypingResult].search_fields
+    assert admin.site._registry[PipelineRun].search_fields
+    assert admin.site._registry[CMVQuantitative].search_fields
+
+
+def test_lab_changelist_filters_matrix_analyte_verified():
+    assert "matrix" in admin.site._registry[Aliquot].list_filter
+    dl = admin.site._registry[DrugLevel].list_filter
+    assert "analyte" in dl and "is_verified" in dl
+    assert "is_verified" in admin.site._registry[CMVSerology].list_filter
+
+
+def test_inline_lab_rows_show_derived_flags_readonly():
+    visit_ma = admin.site._registry[RecipientVisit]
+    inline_ro = {i.model: i.readonly_fields for i in visit_ma.inlines}
+    assert "is_positive" in inline_ro[CMVSerology]
+    assert "severity_tier" in inline_ro[CMVQuantitative]
+    assert "release_overdue" in inline_ro[CMVQuantitative]
+    assert "eGFR" in inline_ro[RenalFunction]
+
+
 def test_risk_stratum_intermediate_excludes_undefined(db):
     """R+ is intermediate only with BOTH serostatuses recorded — a null donor
     status leaves the stratum undefined (property returns None), so the filter

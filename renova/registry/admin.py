@@ -102,28 +102,35 @@ class _EditorDefaultedAdmin(SimpleHistoryAdmin):
         super().save_model(request, obj, form, change)
 
 
+# Inline derived flags: with `fields` unset, get_fields() appends readonly_fields
+# after the editable columns, so each derived @property renders read-only beside
+# the value it was computed from — the operator sees what the typed value derived.
 class CMVSerologyInline(admin.TabularInline):
     model = CMVSerology
     fk_name = "recipient_visit"
     extra = 0
+    readonly_fields = ("is_positive",)
 
 
 class CMVQuantitativeInline(admin.TabularInline):
     model = CMVQuantitative
     fk_name = "recipient_visit"
     extra = 0
+    readonly_fields = ("severity_tier", "release_overdue")
 
 
 class TBNKPanelInline(admin.TabularInline):
     model = TBNKPanel
     fk_name = "recipient_visit"
     extra = 0
+    readonly_fields = ("cd4_cd8_ratio",)
 
 
 class RenalFunctionInline(admin.TabularInline):
     model = RenalFunction
     fk_name = "recipient_visit"
     extra = 0
+    readonly_fields = ("eGFR",)
 
 
 class DrugLevelInline(admin.TabularInline):
@@ -253,6 +260,12 @@ class DonorAdmin(SimpleHistoryAdmin):
 @admin.register(OtherCondition)
 class OtherConditionAdmin(SimpleHistoryAdmin):
     list_display = ("id", "recipient", "condition", "present")
+    autocomplete_fields = ("recipient",)
+
+
+# Lab rows attach to exactly one of recipient_visit XOR donor; autocomplete both
+# so a lab is filed against the right visit/subject without scrolling a dropdown.
+_LAB_SUBJECT_FKS = ("recipient_visit", "donor")
 
 
 @admin.register(CMVSerology)
@@ -261,6 +274,8 @@ class CMVSerologyAdmin(_EditorDefaultedAdmin):
         "id", "recipient_visit", "donor", "value", "is_positive", "result_status",
         "drawn_date", "verified_by", "is_verified",
     )
+    autocomplete_fields = _LAB_SUBJECT_FKS
+    list_filter = ("is_verified", "result_status")
     readonly_fields = ("is_positive", "igm_positive")  # derived at the 2.0 AU/mL threshold
 
 
@@ -270,6 +285,11 @@ class CMVQuantitativeAdmin(SimpleHistoryAdmin):
         "id", "recipient_visit", "donor", "value", "severity_tier", "result_status",
         "drawn_date", "release_overdue",
     )
+    autocomplete_fields = _LAB_SUBJECT_FKS
+    # searchable so the Safety FKs (ReleaseEvent/ProtocolDeviation.quantitative)
+    # can autocomplete against it.
+    search_fields = ("recipient_visit__recipient__subject_id", "donor__subject_id")
+    list_filter = ("result_status",)
     readonly_fields = ("release_overdue",)  # derived Safety-Monitor flag, never stored
 
 
@@ -279,6 +299,7 @@ class TBNKPanelAdmin(SimpleHistoryAdmin):
         "id", "recipient_visit", "donor", "cd3_cd4_count", "cd3_cd8_count",
         "cd4_cd8_ratio", "drawn_date",
     )
+    autocomplete_fields = _LAB_SUBJECT_FKS
     readonly_fields = ("cd4_cd8_ratio",)  # derived, never stored
 
 
@@ -288,6 +309,7 @@ class RenalFunctionAdmin(SimpleHistoryAdmin):
         "id", "recipient_visit", "donor", "serum_creatinine_mg_dl", "eGFR",
         "result_status", "drawn_date",
     )
+    autocomplete_fields = _LAB_SUBJECT_FKS
     readonly_fields = ("eGFR",)  # derived via CKD-EPI 2021, never stored
 
 
@@ -297,6 +319,8 @@ class DrugLevelAdmin(_EditorDefaultedAdmin):
         "id", "recipient_visit", "donor", "analyte", "value", "result_status",
         "drawn_date", "verified_by", "is_verified",
     )
+    autocomplete_fields = _LAB_SUBJECT_FKS
+    list_filter = ("analyte", "is_verified")
 
 
 @admin.register(MedicationCourse)
@@ -305,6 +329,7 @@ class MedicationCourseAdmin(SimpleHistoryAdmin):
         "id", "recipient", "drug_class", "agent", "dose_amount", "dose_unit", "frequency",
         "course_type", "change_direction", "duration_days",
     )
+    autocomplete_fields = ("recipient",)
     readonly_fields = ("duration_days",)  # derived, never stored
 
 
@@ -314,6 +339,8 @@ class RejectionEpisodeAdmin(_EditorDefaultedAdmin):
         "id", "recipient", "onset_date", "rejection_type", "banff_grade",
         "biopsy_proven", "resolved_date", "verified_by", "is_verified",
     )
+    autocomplete_fields = ("recipient",)
+    list_filter = ("is_verified",)
 
 
 @admin.register(Hospitalization)
@@ -322,6 +349,7 @@ class HospitalizationAdmin(SimpleHistoryAdmin):
         "id", "recipient", "admit_date", "discharge_date", "length_of_stay_days",
         "disposition", "cmv_attributable",
     )
+    autocomplete_fields = ("recipient",)
     readonly_fields = ("length_of_stay_days",)  # derived, never stored
 
 
@@ -362,6 +390,10 @@ class AliquotAdmin(SimpleHistoryAdmin):
         "id", "recipient_visit", "matrix", "collected_date", "initial_volume_ul",
         "remaining_ul", "thaw_count",
     )
+    autocomplete_fields = ("recipient_visit",)
+    list_filter = ("matrix",)
+    # searchable by subject so the event/genotyping FKs can autocomplete against it
+    search_fields = ("recipient_visit__recipient__subject_id",)
     readonly_fields = ("remaining_ul", "thaw_count")  # derived from the event log
     inlines = [ThawEventInline, ConsumptionEventInline]
 
@@ -369,21 +401,25 @@ class AliquotAdmin(SimpleHistoryAdmin):
 @admin.register(ThawEvent)
 class ThawEventAdmin(AppendOnlyEventMixin, SimpleHistoryAdmin):
     list_display = ("id", "aliquot", "thawed_date")
+    autocomplete_fields = ("aliquot",)
 
 
 @admin.register(ConsumptionEvent)
 class ConsumptionEventAdmin(AppendOnlyEventMixin, SimpleHistoryAdmin):
     list_display = ("id", "aliquot", "volume_ul", "consumed_date", "pipeline_run")
+    autocomplete_fields = ("aliquot", "pipeline_run")
 
 
 @admin.register(SequencingAliquot)
 class SequencingAliquotAdmin(SimpleHistoryAdmin):
     list_display = ("id", "aliquot", "transfer_date", "destruction_certificate")
+    autocomplete_fields = ("aliquot",)
 
 
 @admin.register(PipelineRun)
 class PipelineRunAdmin(SimpleHistoryAdmin):
     list_display = ("id", "input_manifest_sha256", "reference_set", "started_at", "completed_at")
+    search_fields = ("input_manifest_sha256",)  # autocomplete target for *.pipeline_run
 
 
 # --- Slice 10: genotyping ingest (provenance; second-reviewer lock) ---
@@ -417,6 +453,9 @@ class ReferenceAccessionInline(admin.TabularInline):
 @admin.register(GenotypingResult)
 class GenotypingResultAdmin(SimpleHistoryAdmin):
     list_display = ("id", "aliquot", "pipeline_run", "assay_type", "subject", "sample_date")
+    autocomplete_fields = ("aliquot", "pipeline_run")
+    # searchable by subject so the detail/call FKs (*.result) can autocomplete
+    search_fields = ("aliquot__recipient_visit__recipient__subject_id",)
     readonly_fields = ("subject", "sample_date", "qpcr_rollup")  # derived through the tube
     inlines = [GenotypeCallInline, SangerDetailInline, QpcrDetailInline]
 
@@ -427,16 +466,21 @@ class GenotypeCallAdmin(_EditorDefaultedAdmin):
         "id", "result", "locus", "allele", "sanger_call", "entered_by",
         "verified_by", "is_verified",
     )
+    autocomplete_fields = ("result",)
+    list_filter = ("is_verified",)
 
 
 @admin.register(QpcrProbeReading)
 class QpcrProbeReadingAdmin(_EditorDefaultedAdmin):
     list_display = ("id", "qpcr_detail", "probe", "call", "entered_by", "reviewed_by")
+    autocomplete_fields = ("qpcr_detail",)
 
 
 @admin.register(QpcrDetail)
 class QpcrDetailAdmin(SimpleHistoryAdmin):
     list_display = ("id", "result", "rollup")
+    autocomplete_fields = ("result",)
+    search_fields = ("result__aliquot__recipient_visit__recipient__subject_id",)  # autocomplete target
     readonly_fields = ("rollup",)  # derived from the probe readings
     inlines = [QpcrProbeReadingInline]
 
@@ -444,6 +488,7 @@ class QpcrDetailAdmin(SimpleHistoryAdmin):
 @admin.register(SangerDetail)
 class SangerDetailAdmin(SimpleHistoryAdmin):
     list_display = ("id", "result", "raw_ab1_sha256", "edited_by")
+    autocomplete_fields = ("result",)
 
 
 @admin.register(ReferenceSet)
@@ -461,6 +506,7 @@ class ConcordancePairAdmin(SimpleHistoryAdmin):
         "id", "recipient", "recipient_result", "comparator_result",
         "concordance_call", "superinfection_status",
     )
+    autocomplete_fields = ("recipient", "recipient_result", "comparator_result")
     # the grader's outputs are computed, never editable
     readonly_fields = ("suggested_concordance_call", "co_resolved_count", "comparator_subject")
 
@@ -471,6 +517,7 @@ class ConcordancePairAdmin(SimpleHistoryAdmin):
 @admin.register(ReleaseEvent)
 class ReleaseEventAdmin(SimpleHistoryAdmin):
     list_display = ("id", "quantitative", "released_date", "recipient")
+    autocomplete_fields = ("quantitative",)
     readonly_fields = ("recipient",)  # derived through the tube, never stored
 
 
@@ -480,4 +527,5 @@ class ProtocolDeviationAdmin(SimpleHistoryAdmin):
         "id", "quantitative", "deviation_type", "caused_harm",
         "is_research_related_sae", "recorded_date",
     )
+    autocomplete_fields = ("quantitative",)
     readonly_fields = ("recipient",)  # derived through the tube, never stored
