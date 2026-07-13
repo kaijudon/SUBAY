@@ -1,14 +1,23 @@
+from datetime import date, timedelta
+
 import pytest
 from django.contrib import admin
+from django.test import RequestFactory
 from django_otp.admin import OTPAdminSite
 
-from renova.registry.admin import RenovaAdminSite
+from renova.registry.admin import (
+    ClosureShiftedListFilter,
+    RenovaAdminSite,
+    RiskStratumListFilter,
+)
 from renova.registry.models import (
     Aliquot,
+    ClosureDay,
     CMVQuantitative,
     CMVSerology,
     ConcordancePair,
     ConsumptionEvent,
+    Donor,
     DrugLevel,
     Hospitalization,
     MedicationCourse,
@@ -205,3 +214,134 @@ class _Req:
 
 def _req():
     return _Req()
+
+
+# --- Front-end 1 (issue #2): core subject/visit spine ergonomics ----------
+#
+# Seam: the admin config plus its query hooks against the real stack. Search is
+# exercised through ModelAdmin.get_search_results and the custom list-filter
+# querysets (the derived risk/closure filters can't be plain field lookups),
+# so we prove behavior, not just declarations, without an OTP-verified client.
+
+_RF = RequestFactory()
+
+
+def _filter(filter_cls, model_admin, model, **params):
+    """Build a SimpleListFilter the way the changelist does — from a request —
+    so Django 5.x list-valued params parse correctly."""
+    request = _RF.get("/", params)
+    used = {k: request.GET.getlist(k) for k in request.GET}
+    return filter_cls(request, used, model, model_admin)
+
+
+@pytest.fixture
+def recipients(db):
+    """One high-risk (D+/R-) and one low-risk (D-/R-) recipient."""
+    high = Recipient.objects.create(
+        subject_id="SCMVR07", date_of_birth=date(1980, 1, 1), sex="M",
+        kt_date=date(2025, 1, 1), donor_serostatus="POS", recipient_serostatus="NEG",
+        induction_agent="atg", completion_status="enrolled",
+    )
+    low = Recipient.objects.create(
+        subject_id="SCMVR12", date_of_birth=date(1975, 1, 1), sex="F",
+        kt_date=date(2025, 2, 1), donor_serostatus="NEG", recipient_serostatus="NEG",
+        induction_agent="basiliximab", completion_status="completed",
+    )
+    return high, low
+
+
+def test_recipient_searchable_by_subject_id_string(recipients):
+    """AC: search by Subject ID as a string; '07' never coerced to int 7."""
+    ma = admin.site._registry[Recipient]
+    assert "subject_id" in ma.search_fields
+    qs, _distinct = ma.get_search_results(_RF.get("/"), Recipient.objects.all(), "07")
+    ids = list(qs.values_list("subject_id", flat=True))  # forces the query
+    assert ids == ["SCMVR07"]  # matched the string, did not blow up on int()
+
+
+def test_recipient_changelist_has_the_three_filters(recipients):
+    ma = admin.site._registry[Recipient]
+    assert "completion_status" in ma.list_filter
+    assert "induction_agent" in ma.list_filter
+    assert RiskStratumListFilter in ma.list_filter
+
+
+def test_risk_stratum_filter_queryset_mirrors_the_derived_property(recipients):
+    high, low = recipients
+    ma = admin.site._registry[Recipient]
+    hi = _filter(RiskStratumListFilter, ma, Recipient, risk_stratum="high")
+    got = list(hi.queryset(_RF.get("/"), Recipient.objects.all()))
+    assert got == [high]
+    # the filter agrees with the model's own derivation
+    assert high.risk_stratum == "high" and low.risk_stratum == "low"
+    lo = _filter(RiskStratumListFilter, ma, Recipient, risk_stratum="low")
+    assert list(lo.queryset(_RF.get("/"), Recipient.objects.all())) == [low]
+
+
+def test_risk_stratum_intermediate_excludes_undefined(db):
+    """R+ is intermediate only with BOTH serostatuses recorded — a null donor
+    status leaves the stratum undefined (property returns None), so the filter
+    must not sweep it in."""
+    inter = Recipient.objects.create(
+        subject_id="SCMVR20", date_of_birth=date(1980, 1, 1), sex="M",
+        kt_date=date(2025, 1, 1), donor_serostatus="NEG", recipient_serostatus="POS",
+    )
+    undefined = Recipient.objects.create(
+        subject_id="SCMVR21", date_of_birth=date(1980, 1, 1), sex="M",
+        kt_date=date(2025, 1, 1), donor_serostatus=None, recipient_serostatus="POS",
+    )
+    ma = admin.site._registry[Recipient]
+    im = _filter(RiskStratumListFilter, ma, Recipient, risk_stratum="intermediate")
+    got = list(im.queryset(_RF.get("/"), Recipient.objects.all()))
+    assert got == [inter]
+    assert inter.risk_stratum == "intermediate" and undefined.risk_stratum is None
+
+
+def test_recipient_fieldsets_group_derived_readonly(recipients):
+    ma = admin.site._registry[Recipient]
+    assert ma.fieldsets  # dense form is organized, not a flat field list
+    grouped = {f for _label, opts in ma.fieldsets for f in opts["fields"]}
+    for derived in ("age", "risk_stratum"):
+        assert derived in grouped
+        assert derived in ma.readonly_fields
+
+
+def test_donor_searchable_and_thin(recipients):
+    ma = admin.site._registry[Donor]
+    assert "subject_id" in ma.search_fields
+    # thin: no recipient-timeline machinery bolted on
+    assert RecipientVisit not in [i.model for i in ma.inlines]
+    assert ma.fieldsets
+
+
+def test_visit_search_fields_reach_subject_for_autocomplete(recipients):
+    """Prefactor: downstream autocomplete_fields=['recipient'] needs this."""
+    ma = admin.site._registry[RecipientVisit]
+    assert "recipient__subject_id" in ma.search_fields
+
+
+def test_visit_changelist_filters_and_date_hierarchy(recipients):
+    ma = admin.site._registry[RecipientVisit]
+    assert "timepoint_label" in ma.list_filter
+    assert "completion_status" in ma.list_filter
+    assert ClosureShiftedListFilter in ma.list_filter
+    assert ma.date_hierarchy == "actual_visit_date"
+
+
+def test_closure_shifted_filter_queryset(recipients):
+    high, _low = recipients
+    # day_7 nominal for SCMVR07 = 2025-01-08; close it so the visit shifts.
+    ClosureDay.objects.create(date=date(2025, 1, 8), reason="annexed_holiday")
+    shifted = RecipientVisit.objects.create(
+        recipient=high, timepoint_label="day_7",
+        actual_visit_date=date(2025, 1, 9),
+    )
+    plain = RecipientVisit.objects.create(
+        recipient=high, timepoint_label="day_30",
+        actual_visit_date=high.kt_date + timedelta(days=30),
+    )
+    ma = admin.site._registry[RecipientVisit]
+    yes = _filter(ClosureShiftedListFilter, ma, RecipientVisit, closure_shifted="yes")
+    assert list(yes.queryset(_RF.get("/"), RecipientVisit.objects.all())) == [shifted]
+    no = _filter(ClosureShiftedListFilter, ma, RecipientVisit, closure_shifted="no")
+    assert list(no.queryset(_RF.get("/"), RecipientVisit.objects.all())) == [plain]
