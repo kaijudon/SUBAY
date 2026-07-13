@@ -334,7 +334,13 @@ class AppendOnlyEventMixin:
     event log is immutable so the ledger cannot be rewritten."""
 
     def has_change_permission(self, request, obj=None):
-        return obj is None  # allow the add form, forbid editing an existing event
+        # Forbid editing an EXISTING event (append-only). For the module-level
+        # check (obj is None) defer to the user's real Django permission, so role
+        # scoping still applies — the mixin must not hand every staff user a
+        # phantom change right on the ledger models.
+        if obj is not None:
+            return False
+        return super().has_change_permission(request, obj)
 
     def has_delete_permission(self, request, obj=None):
         return False
