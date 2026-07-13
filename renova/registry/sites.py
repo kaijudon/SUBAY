@@ -6,6 +6,12 @@ from django_otp.admin import OTPAdminSite
 # surfaces; the same set the RBAC change-grant keys on (migration 0019).
 OUTCOME_CRITICAL = ["cmvserology", "druglevel", "rejectionepisode", "genotypecall"]
 
+# Front-end 5 (issue #6): the models a Safety Monitor ACTS on off a flagged QNAT
+# row — logging a release-event (which clears the flag) or recording a protocol
+# deviation / SAE. The release-timeliness worklist gates on the add permission
+# over these, the same perm-not-group-name approach as OUTCOME_CRITICAL above.
+SAFETY_ACTION_MODELS = ["releaseevent", "protocoldeviation"]
+
 # Front-end 3 (issue #3): the admin index is grouped by STUDY WORKFLOW, in the
 # order the operator works, instead of one flat alphabetical wall. Membership is
 # by model object_name; ordering WITHIN a section is the listed order (work
@@ -64,6 +70,19 @@ class RenovaAdminSite(OTPAdminSite):
             for model in OUTCOME_CRITICAL
         )
 
+    # --- Front-end 5 (issue #6): Safety Monitor release-timeliness worklist ---
+
+    def _can_monitor_safety(self, request):
+        """True when the user may record a release-event or protocol deviation —
+        the Safety Monitor function. Gates on the add permission (pure Django
+        perms, no hardcoded group name): the entry/safety role can act, the
+        view-only analyst and the reviewing clinician (who has no add on these)
+        cannot, so the worklist stays scoped to who can work it."""
+        return any(
+            request.user.has_perm(f"registry.add_{model}")
+            for model in SAFETY_ACTION_MODELS
+        )
+
     def get_urls(self):
         urls = super().get_urls()
         custom = [
@@ -72,9 +91,56 @@ class RenovaAdminSite(OTPAdminSite):
                 self.admin_view(self.verification_worklist_view),
                 name="verification_worklist",
             ),
+            path(
+                "safety-worklist/",
+                self.admin_view(self.safety_worklist_view),
+                name="safety_worklist",
+            ),
         ]
         # custom URLs first so the named route resolves before any catch-all.
         return custom + urls
+
+    def safety_worklist_view(self, request):
+        """The standing O4 release surface: exactly the QNAT rows flagged
+        release_overdue (high-viral-load OR symptomatic, no timely release),
+        computed from stored data via the QuerySet standing query — so threshold
+        and window come from safety.py's named constants, never inline magic. Each
+        flagged row deep-links to log a release-event (which clears the flag) and
+        to record a protocol deviation / SAE (dual-track). admin_view() enforced
+        login + staff + TOTP; this adds the safety-action permission."""
+        from django.apps import apps
+        from django.core.exceptions import PermissionDenied
+        from django.template.response import TemplateResponse
+
+        if not self._can_monitor_safety(request):
+            raise PermissionDenied
+
+        model = apps.get_model("registry", "cmvquantitative")
+        release_add = reverse("admin:registry_releaseevent_add")
+        deviation_add = reverse("admin:registry_protocoldeviation_add")
+        rows = []
+        for qnat in model.objects.overdue_release_flags():
+            rows.append({
+                "label": str(qnat),
+                "recipient": qnat.recipient_visit.recipient if qnat.recipient_visit else None,
+                "value": qnat.value,
+                "severity_tier": qnat.severity_tier,
+                "drawn_date": qnat.drawn_date,
+                "change_url": reverse("admin:registry_cmvquantitative_change", args=[qnat.pk]),
+                # deep-link the FK-anchored add forms via the ?quantitative= param
+                "release_url": f"{release_add}?quantitative={qnat.pk}",
+                "deviation_url": f"{deviation_add}?quantitative={qnat.pk}",
+            })
+
+        context = {
+            **self.each_context(request),
+            "title": "Release-timeliness worklist",
+            "rows": rows,
+            "total": len(rows),
+        }
+        return TemplateResponse(
+            request, "admin/registry/safety_worklist.html", context
+        )
 
     def verification_worklist_view(self, request):
         """One queue of exactly the entered-but-unverified outcome-critical rows,
@@ -142,18 +208,30 @@ class RenovaAdminSite(OTPAdminSite):
             if models:
                 app_list.append(self._section(section, models))
 
-        # Reviewing Clinician worklist: a synthetic index row (same shape the
-        # template renders real models as) linking to the queue view. Only for
-        # users who may verify — so it rides the same permission gate as the view.
+        # Worklists: synthetic index rows (same shape the template renders real
+        # models as) linking to the queue views. Each rides the SAME permission
+        # gate as its view, so a link never appears for a user the view forbids.
+        review = []
         if self._can_verify(request):
-            app_list.append(self._section("Review", [{
+            review.append({
                 "name": "Verification worklist",
                 "object_name": "VerificationWorklist",
                 "perms": {"add": False, "change": True, "delete": False, "view": True},
                 "admin_url": reverse("admin:verification_worklist"),
                 "add_url": None,
                 "view_only": True,
-            }]))
+            })
+        if self._can_monitor_safety(request):
+            review.append({
+                "name": "Release-timeliness worklist",
+                "object_name": "SafetyWorklist",
+                "perms": {"add": False, "change": True, "delete": False, "view": True},
+                "admin_url": reverse("admin:safety_worklist"),
+                "add_url": None,
+                "view_only": True,
+            })
+        if review:
+            app_list.append(self._section("Review", review))
 
         leftovers = [m for n, m in by_name.items() if n not in placed]
         if leftovers:
