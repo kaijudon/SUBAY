@@ -1,0 +1,49 @@
+{% extends "admin/base_site.html" %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Home</a>
+  &rsaquo; Release-timeliness worklist
+</div>
+{% endblock %}
+
+{% block content %}
+<p>
+  QNAT results flagged <strong>release-overdue</strong> (high viral load or
+  symptomatic, with no release-event logged inside the 24h window).
+  <strong>{{ total }}</strong> row{{ total|pluralize }} pending.
+  Log a release-event to clear a row, or record a protocol deviation
+  (escalating to a research-related SAE when it caused harm).
+</p>
+
+<div class="module">
+  {% if rows %}
+  <table>
+    <thead>
+      <tr>
+        <th>QNAT</th><th>Recipient</th><th>Value (IU/mL)</th>
+        <th>Severity</th><th>Drawn</th><th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <th scope="row"><a href="{{ row.change_url }}">{{ row.label }}</a></th>
+        <td>{{ row.recipient|default:"-" }}</td>
+        <td>{{ row.value|default:"-" }}</td>
+        <td>{{ row.severity_tier }}</td>
+        <td>{{ row.drawn_date }}</td>
+        <td>
+          <a href="{{ row.release_url }}">Log release-event</a>
+          &middot;
+          <a href="{{ row.deviation_url }}">Record deviation / SAE</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="help">Nothing overdue. Every releasable QNAT has a timely release-event.</p>
+  {% endif %}
+</div>
+{% endblock %}
