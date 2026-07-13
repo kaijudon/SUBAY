@@ -133,6 +133,49 @@ def test_index_shows_only_sections_the_group_can_act_on():
 
 
 @pytest.mark.django_db
+def test_visit_change_page_renders_with_autocomplete_and_inline_derived_flags():
+    """Front-end 2 (#4) smoke: the visit change page (autocomplete FKs +
+    lab inlines carrying derived read-only flags) renders through the client."""
+    from datetime import date
+    from decimal import Decimal
+    from renova.registry.models import (
+        CMVQuantitative, CMVSerology, Recipient, RecipientVisit, RenalFunction,
+    )
+
+    rec = Recipient.objects.create(
+        subject_id="SCMVR30", date_of_birth=date(1980, 1, 1), sex="M",
+        kt_date=date(2025, 1, 1),
+    )
+    visit = RecipientVisit.objects.create(
+        recipient=rec, timepoint_label="day_7", actual_visit_date=date(2025, 1, 8),
+    )
+    CMVSerology.objects.create(
+        recipient_visit=visit, value=Decimal("3.0"), drawn_date=date(2025, 1, 8),
+    )
+    CMVQuantitative.objects.create(
+        recipient_visit=visit, value=Decimal("50000"), drawn_date=date(2025, 1, 8),
+    )
+    RenalFunction.objects.create(
+        recipient_visit=visit, serum_creatinine_mg_dl=Decimal("1.2"),
+        drawn_date=date(2025, 1, 8),
+    )
+
+    client = _otp_client(_role_user("root", superuser=True))
+    resp = client.get(reverse("admin:registry_recipientvisit_change", args=[visit.pk]))
+    assert resp.status_code == 200
+
+
+@pytest.mark.django_db
+def test_lab_changelist_renders_through_client():
+    from renova.registry.models import DrugLevel
+
+    client = _otp_client(_role_user("root", superuser=True))
+    resp = client.get(reverse("admin:registry_druglevel_changelist"))
+    assert resp.status_code == 200
+    assert DrugLevel._meta.app_label == "registry"
+
+
+@pytest.mark.django_db
 def test_no_model_moved_between_apps():
     """Grouping is site-level presentation: every registry model still reports
     registry as its Django app_label."""
