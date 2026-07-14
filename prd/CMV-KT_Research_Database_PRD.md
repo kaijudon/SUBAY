@@ -1,6 +1,6 @@
 # PRD — SUBAY: CMV/Kidney-Transplant Research Database
 
-**Name:** **SUBAY** — **REN**al transplant **O**bservational **V**iral **A**rchive. Human-facing display name "SUBAY"; Django project/package `subay`.
+**Name:** **SUBAY** - **S**urveillance & **U**nified **B**ioarchive for **A**ntiviral nephrolog**Y**. Human-facing display name "SUBAY"; Django project/package `subay`.
 
 **Project:** Host Clinical Status and Characterization of CMV in Kidney Transplant Patients in Region XI (Bad-ang et al., SPMC). DOST-PCHRD code 2023-08-A2-PCHRD-CORE-TB-16258. Implementing agency SPMC; cooperating DDH, PSN-Mindanao, SPAIRI, UP Mindanao Philippine Genome Center (PGC).
 
