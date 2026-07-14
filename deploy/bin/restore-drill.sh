@@ -15,7 +15,12 @@
 set -euo pipefail
 
 CIPHERTEXT="${1:-}"
-BACKUP_KEYFILE="${RENOVA_BACKUP_KEYFILE:-/mnt/keys/renova-backup.key}"
+# Asymmetric restore: the escrowed PRIVATE key (sealed custody, RUNBOOK §8) is
+# imported into this keyring on the drill/recovery machine — never on the live box.
+# Point GNUPGHOME at that keyring; if the private key is passphrase-protected, give
+# its passphrase file. The live box (backup.sh) holds only the public half.
+GNUPGHOME="${RENOVA_BACKUP_GNUPGHOME:-}"
+GPG_PASSPHRASE_FILE="${RENOVA_BACKUP_GPG_PASSPHRASE_FILE:-}"
 DRILL_DB="renova_restore_drill_$(date -u +%Y%m%dT%H%M%SZ)"
 PG_SUPERUSER="${RENOVA_PG_SUPERUSER:-postgres}"   # OS user for peer-auth admin ops
 
@@ -26,16 +31,23 @@ PG_SUPERUSER="${RENOVA_PG_SUPERUSER:-postgres}"   # OS user for peer-auth admin 
 pg() { sudo -u "$PG_SUPERUSER" "$@"; }
 
 [[ -n "$CIPHERTEXT" ]] || { echo "usage: $0 <db-*.dump.gpg>" >&2; exit 1; }
-[[ -r "$CIPHERTEXT" ]]     || { echo "cannot read $CIPHERTEXT" >&2; exit 1; }
-[[ -r "$BACKUP_KEYFILE" ]] || { echo "cannot read key $BACKUP_KEYFILE" >&2; exit 1; }
+[[ -r "$CIPHERTEXT" ]] || { echo "cannot read $CIPHERTEXT" >&2; exit 1; }
+[[ -n "$GNUPGHOME" ]] && export GNUPGHOME
+[[ -z "$GPG_PASSPHRASE_FILE" || -r "$GPG_PASSPHRASE_FILE" ]] \
+    || { echo "cannot read passphrase file $GPG_PASSPHRASE_FILE" >&2; exit 1; }
 
 WORK="$(mktemp -d)"
 cleanup() { pg dropdb --if-exists "$DRILL_DB" 2>/dev/null || true; rm -rf "$WORK"; }
 trap cleanup EXIT
 
-echo "==> [1/3] decrypting dump with escrowed key"
-gpg --batch --quiet --passphrase-file "$BACKUP_KEYFILE" \
-    --decrypt --output "${WORK}/db.dump" "$CIPHERTEXT"
+echo "==> [1/3] decrypting dump with escrowed private key"
+# Loopback pinentry so a passphrase-protected private key works non-interactively.
+gpg_args=(--batch --yes --quiet)
+if [[ -n "$GPG_PASSPHRASE_FILE" ]]; then
+    gpg_args+=(--pinentry-mode loopback --passphrase-file "$GPG_PASSPHRASE_FILE")
+fi
+gpg "${gpg_args[@]}" --decrypt --output "${WORK}/db.dump" "$CIPHERTEXT" \
+    || { echo "decrypt failed — is the escrowed private key imported into this keyring (GNUPGHOME)?" >&2; exit 1; }
 echo "    decrypted $(du -h "${WORK}/db.dump" | cut -f1)"
 
 echo "==> [2/3] restoring into throwaway DB ${DRILL_DB}"

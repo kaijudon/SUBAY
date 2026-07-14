@@ -38,11 +38,17 @@ LUKS key in RAM — a sleeping laptop is *not* protected. OFF = protected.
 
 ## §5 — Backup custody and the quarterly restore drill
 
-**Three parts, two custody paths.** `backup.sh` writes three encrypted artifacts
-(DB dump, MEDIA_ROOT, secrets) to the backup target (Drive 1). The decryption key
-lives on a **separate** path (`RENOVA_BACKUP_KEYFILE`) — never on the same device as
-the ciphertext. A weekly copy of the `*.gpg` files goes to **off-site Drive 2**
-(§8 custody).
+**Three parts, public-key encryption.** `backup.sh` writes three encrypted artifacts
+(DB dump, MEDIA_ROOT, secrets) to the backup target (Drive 1), encrypted with GPG
+**asymmetrically** to `RENOVA_BACKUP_GPG_RECIPIENT`. The box holds only the *public*
+key, so a stolen or compromised running box **cannot decrypt its own backups**. The
+*private* key that decrypts them is escrowed off-box in sealed custody (§8) and only
+imported on the drill/recovery machine. A weekly copy of the `*.gpg` files goes to
+**off-site Drive 2** (§8 custody).
+
+To restore, the drill machine points `RENOVA_BACKUP_GNUPGHOME` at a keyring holding
+the imported private key (and `RENOVA_BACKUP_GPG_PASSPHRASE_FILE` if it is
+passphrase-protected).
 
 **Quarterly restore drill (a backup you have never restored is not a backup):**
 1. `sudo deploy/bin/restore-drill.sh /mnt/backup/renova/db-<latest>.dump.gpg`
@@ -76,7 +82,9 @@ the ciphertext. A weekly copy of the `*.gpg` files goes to **off-site Drive 2**
 
 **What is sealed** (each in its own signed, dated envelope):
 1. The **LUKS disk passphrase** — without it a powered-off box is unrecoverable.
-2. The **backup decryption key** (`renova-backup.key`) — without it the backups are unrecoverable.
+2. The **backup GPG private key** (exported, e.g. `renova-backup-private.asc`, plus its
+   passphrase) — without it the backups are permanently unrecoverable. The live box
+   never holds this; it is the whole point of the asymmetric scheme.
 
 **Custody:** the Co-DM holds the sealed envelopes **off-site**, on a custody path
 separate from both the box and Drive 1. The Co-DM has **no routine data-entry
