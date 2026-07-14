@@ -538,3 +538,30 @@ Template (one entry per consequential decision, IDs sequential — DEC-001, DEC-
   required, a dedicated model can be added behind a migration; the boolean stays as the
   honest-denominator flag.
 - Timestamp (UTC ISO 8601): 2026-06-24T00:00:00Z
+
+## DEC-024 — pgcrypto delivered at the backup layer; column-level encryption deferred
+- Decision: The PRD's locked stack says "Sensitive columns via pgcrypto," but the app
+  (slices 02–14) was built with native `date` columns. Decide how Slice 15 satisfies the
+  pgcrypto requirement without an app rewrite.
+- Chosen Option: Enable the pgcrypto extension (`deploy/sql/01-pgcrypto.sql`) and use it as
+  defense-in-depth over the OFF-MACHINE backups — `deploy/bin/backup.sh` encrypts the
+  three-part backup with an escrowed key on a separate custody path, and
+  `deploy/bin/restore-drill.sh` verifies pgcrypto decryption end-to-end quarterly. The
+  load-bearing at-rest control on the live box stays LUKS full-disk (Phase 1). Column-level
+  pgcrypto on the re-identifying anchor (`Recipient.date_of_birth`, `kt_date`, raw `*_date`)
+  is deferred.
+- Confidence (0-100): 72
+- Alternatives Considered:
+  1. Encrypt the date columns to bytea now with app-layer encrypt/decrypt — rejected: breaks
+     the ORM and the de-id export's offset math, and adds a crypto dependency, violating the
+     no-new-dep rule (DEC-002/DEC-020 lineage).
+  2. Claim LUKS alone satisfies pgcrypto — rejected: LUKS protects a powered-off box but not
+     the backup once it leaves the disk; the slice explicitly scopes pgcrypto as
+     "defense-in-depth over off-machine backups" (issue 15).
+- Reasoning: The slice's own scope ties pgcrypto to off-machine backups, which is exactly the
+  gap LUKS doesn't cover. Encrypting the backup (not the live columns) closes that gap with no
+  app change and keeps the ORM/de-id math intact, mirroring DEC-020's "at-rest is an ops
+  concern" posture.
+- Reversibility: High — the extension is installed, so column-level encryption can be layered
+  on later behind a migration + app-layer accessor without changing the backup contract.
+- Timestamp (UTC ISO 8601): 2026-07-14T00:00:00Z

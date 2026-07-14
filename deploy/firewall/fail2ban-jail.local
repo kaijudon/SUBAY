@@ -1,0 +1,20 @@
+# deploy/firewall/fail2ban-jail.local — Slice 15 §2: SSH brute-force lockout
+# Install as /etc/fail2ban/jail.local, then: sudo systemctl enable --now fail2ban
+#
+# fail2ban watches the SSH auth log and bans an IP after repeated failures. With
+# key-only SSH (sshd-hardening.conf) brute force already can't succeed, but this
+# stops the noise and trips the SSH-anomaly signal the healthcheck reports (§6).
+
+[DEFAULT]
+# Never ban the loopback or the admin LAN — you must not lock the operator out.
+# EDIT the subnet to match ufw-setup.sh's ADMIN_SUBNET.
+ignoreip = 127.0.0.1/8 ::1 192.168.1.0/24
+
+bantime  = 1h
+findtime = 10m
+maxretry = 5
+backend  = systemd
+
+[sshd]
+enabled = true
+port    = 22
