@@ -26,6 +26,10 @@ MAX_BACKUP_AGE_H="${RENOVA_MAX_BACKUP_AGE_H:-26}"     # nightly + slack
 DISK_PATHS="${RENOVA_DISK_PATHS:-/ /var}"
 DISK_WARN_PCT="${RENOVA_DISK_WARN_PCT:-85}"
 ALERT_CMD="${RENOVA_ALERT_CMD:-}"                     # e.g. 'mail -s RENOVA op@example' or a curl
+# Single PHI-free push chokepoint (deploy/bin/notify-operator.sh). Preferred over
+# ALERT_CMD so every operator alert — monitoring, reboot-required — arrives the same
+# way through one place that must stay PHI-free.
+NOTIFY="${RENOVA_NOTIFY:-/opt/renova/deploy/bin/notify-operator.sh}"
 HEARTBEAT_URL="${RENOVA_HEARTBEAT_URL:-}"            # dead-man's switch ping target
 # -----------------------------------------------------------------------------
 
@@ -64,9 +68,13 @@ fi
 
 # ---- dispatch ---------------------------------------------------------------
 if (( ${#PROBLEMS[@]} > 0 )); then
-    MSG="RENOVA[${HOST}] ALERT: $(printf '%s; ' "${PROBLEMS[@]}")"
+    SUMMARY="$(printf '%s; ' "${PROBLEMS[@]}")"
+    MSG="RENOVA[${HOST}] ALERT: ${SUMMARY}"
     echo "$MSG" >&2
-    if [[ -n "$ALERT_CMD" ]]; then
+    # Prefer the single notify chokepoint; fall back to a raw ALERT_CMD if set.
+    if [[ -x "$NOTIFY" ]]; then
+        "$NOTIFY" "healthcheck" "$SUMMARY" || echo "alert dispatch failed" >&2
+    elif [[ -n "$ALERT_CMD" ]]; then
         printf '%s\n' "$MSG" | eval "$ALERT_CMD" || echo "alert dispatch failed" >&2
     fi
     exit 1
