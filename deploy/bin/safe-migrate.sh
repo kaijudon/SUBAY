@@ -54,6 +54,15 @@ DUMP="${BACKUP_DIR}/${DB_NAME}-${TS}.dump"
 pg_dump --format=custom --dbname="$DATABASE_URL" --file="$DUMP"
 echo "    wrote ${DUMP}"
 
+# Drift guard: the repo must already hold every migration file. This wrapper never
+# generates schema on the production box — unmade migrations mean the code and the
+# committed migrations disagree, so refuse rather than silently skip a model change.
+if ! "$PYTHON" "$MANAGE" makemigrations --check --dry-run >/dev/null 2>&1; then
+    echo "!! model/migration drift: unmade migrations exist — generate + review them in dev, redeploy." >&2
+    echo "!! refusing to migrate against a repo whose migrations don't match its models." >&2
+    exit 1
+fi
+
 echo "==> [2/4] migration plan"
 "$PYTHON" "$MANAGE" migrate --plan
 
