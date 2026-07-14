@@ -87,6 +87,15 @@ set -a; source <(sudo cat /etc/renova/renova.env); set +a
       **Verify:** close the lid — the box stays up (SSH/console still responds).
 - [ ] Battery = UPS: unplug and confirm it keeps serving. Read RUNBOOK §4 for operator-gated reboots.
       **Verify:** app still answers on `https://127.0.0.1/` on battery.
+- [ ] Clean-shutdown daemon on the UPS (never let a power-cut tear a Postgres write). Follow `deploy/systemd/ups-clean-shutdown.md` (NUT).
+      **Verify:** `upsc renova-ups` reports the UPS; a simulated low-battery triggers `systemctl poweroff`.
+- [ ] Operator gets pushed a notice when a reboot is pending (updates never auto-reboot this LUKS box).
+      ```sh
+      sudo cp deploy/bin/notify-operator.sh /opt/renova/deploy/bin/   # already in repo; ensure executable
+      sudo cp deploy/systemd/renova-reboot-required.{service,timer} /etc/systemd/system/
+      sudo systemctl daemon-reload && sudo systemctl enable --now renova-reboot-required.timer
+      ```
+      **Verify:** `sudo touch /run/reboot-required` then `sudo systemctl start renova-reboot-required.service` → you receive one PHI-free "reboot-required" alert.
 
 ## §5 — Backups + restore drill  (`bin/backup.sh`, `bin/restore-drill.sh`)
 
@@ -131,8 +140,13 @@ set -a; source <(sudo cat /etc/renova/renova.env); set +a
       sudo timedatectl set-ntp true
       ```
       **Verify:** `timedatectl` → `System clock synchronized: yes`, `NTP service: active`.
-- [ ] Periodic immutable history export scheduled (RUNBOOK §7).
-      **Verify:** the export step in RUNBOOK §7 is on the calendar and its first run is off-site.
+- [ ] Periodic tamper-evident history export scheduled (`bin/export-history.sh` → hash-chained, off-site immutable bucket).
+      ```sh
+      sudo cp deploy/systemd/renova-history-export.{service,timer} /etc/systemd/system/
+      sudo systemctl daemon-reload && sudo systemctl enable --now renova-history-export.timer
+      sudo systemctl start renova-history-export.service   # first run now
+      ```
+      **Verify:** a `history_<TS>.sql.gz` + a new line in `history_chain.log` appear under `/var/backups/renova/history`; the first export is pushed off-site to the object-lock bucket (RUNBOOK §7).
 
 ## §8 — Sealed envelopes + bus-factor  (RUNBOOK §8)
 
