@@ -13,10 +13,13 @@
 #   2. MEDIA_ROOT     (genotyping raw files, content-addressed) as a tar
 #   3. Secrets        (/etc/renova/renova.env, incl. keys) as a tar
 #
-# Encryption: symmetric AES-256 via gpg, using a passphrase read from a key file
-# that lives on a SEPARATE custody path from the backups themselves (you must
-# never store the key next to the ciphertext it unlocks). Set BACKUP_KEYFILE to a
-# path on a different volume/USB than BACKUP_DEST.
+# Encryption: ASYMMETRIC (public-key) gpg to a named recipient. The box holds ONLY
+# the recipient's PUBLIC key, so it can write backups but can NEVER decrypt them —
+# a compromised or stolen running box cannot read its own past backups. The private
+# key that decrypts is escrowed OFF the box (sealed custody, RUNBOOK §8) and is only
+# imported on the drill/recovery machine (deploy/bin/restore-drill.sh). This is a
+# stronger custody boundary than a symmetric passphrase the box must keep on hand.
+# Set RENOVA_BACKUP_GPG_RECIPIENT to the key id / fingerprint / uid to encrypt to.
 #
 # NO PHI is ever written to logs — only file names, sizes, and success/fail.
 # =============================================================================
@@ -24,7 +27,8 @@ set -euo pipefail
 
 # ---- operator settings (override via the systemd unit's Environment=) --------
 BACKUP_DEST="${RENOVA_BACKUP_DEST:-/mnt/backup/renova}"        # off-machine target (Drive 1)
-BACKUP_KEYFILE="${RENOVA_BACKUP_KEYFILE:-/mnt/keys/renova-backup.key}"  # SEPARATE custody
+GPG_RECIPIENT="${RENOVA_BACKUP_GPG_RECIPIENT:-}"               # public key id/fpr/uid to encrypt to
+GNUPGHOME="${RENOVA_BACKUP_GNUPGHOME:-}"                       # optional: dedicated keyring holding only the public key
 MEDIA_ROOT="${MEDIA_ROOT:-/opt/renova/media}"
 ENV_FILE="${RENOVA_ENV_FILE:-/etc/renova/renova.env}"
 RETAIN_DAYS="${RENOVA_BACKUP_RETAIN_DAYS:-30}"
@@ -35,16 +39,23 @@ TS="$(date -u +%Y%m%dT%H%M%SZ)"
 log() { echo "[$(date -u +%H:%M:%SZ)] $*"; }
 fail() { echo "BACKUP FAILED: $*" >&2; exit 1; }
 
-[[ -n "${DATABASE_URL:-}" ]] || fail "DATABASE_URL not set (load the systemd env file)"
-[[ -r "$BACKUP_KEYFILE" ]]   || fail "backup key not readable at $BACKUP_KEYFILE (separate custody path)"
+[[ -n "${DATABASE_URL:-}" ]]  || fail "DATABASE_URL not set (load the systemd env file)"
+[[ -n "$GPG_RECIPIENT" ]]     || fail "RENOVA_BACKUP_GPG_RECIPIENT not set (public key to encrypt to)"
+# Optional dedicated keyring (holds ONLY the public key — the box can't decrypt).
+[[ -n "$GNUPGHOME" ]] && export GNUPGHOME
+# Fail loudly now if the public key isn't in the keyring, rather than mid-backup.
+gpg --batch --list-keys "$GPG_RECIPIENT" >/dev/null 2>&1 \
+    || fail "recipient public key '$GPG_RECIPIENT' not found in the gpg keyring — import it first"
 mkdir -p "$BACKUP_DEST" "$(dirname "$STAMPFILE")"
 
-# gpg symmetric encrypt from the keyfile passphrase. Never echoes the key.
+# gpg PUBLIC-KEY encrypt to the recipient. The box has no private key, so it cannot
+# decrypt what it just wrote. --trust-model always: we chose this recipient explicitly
+# in config, so skip the interactive ownertrust prompt (batch mode would otherwise fail).
 encrypt() {  # encrypt <plaintext-file> -> <plaintext-file>.gpg, then removes plaintext
     local src="$1"
     gpg --batch --yes --quiet \
-        --passphrase-file "$BACKUP_KEYFILE" \
-        --cipher-algo AES256 --symmetric \
+        --trust-model always \
+        --encrypt --recipient "$GPG_RECIPIENT" \
         --output "${src}.gpg" "$src"
     rm -f "$src"
 }
@@ -66,7 +77,7 @@ else
     log "    (no MEDIA_ROOT at $MEDIA_ROOT yet — skipping part 2)"
 fi
 
-log "3/3 secrets archive (env + pgcrypto/backup key material)"
+log "3/3 secrets archive (env + pgcrypto key material)"
 tar -C "$(dirname "$ENV_FILE")" -cf "${STAGE}/secrets-${TS}.tar" "$(basename "$ENV_FILE")" \
     || fail "tar secrets"
 encrypt "${STAGE}/secrets-${TS}.tar"
