@@ -5,8 +5,8 @@ Source PRD: `prd/CMV-KT_Research_Database_PRD.md` (O8 / Topic #7-D).*
 
 ## Goal
 
-The thinnest end-to-end path through every layer of SUBAY (RENal transplant
-Observational Viral Archive) so the deep-module slices have a spine to attach to:
+The thinnest end-to-end path through every layer of SUBAY (Surveillance & Unified
+Bioarchive for Antiviral nephrologY) so the deep-module slices have a spine to attach to:
 a Data Manager logs in with TOTP 2FA, enters a pseudonymous recipient + one visit +
 one CMV serology in the customized Django admin, and runs an export that emits a
 de-identified CSV with no calendar dates.
