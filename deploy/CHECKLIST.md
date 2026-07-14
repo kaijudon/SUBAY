@@ -99,12 +99,26 @@ set -a; source <(sudo cat /etc/renova/renova.env); set +a
 
 ## §5 — Backups + restore drill  (`bin/backup.sh`, `bin/restore-drill.sh`)
 
-- [ ] Provision the two custody paths: an off-machine backup target and a **separate** key path (different volume/USB).
+- [ ] Generate the backup GPG keypair ONCE, on a machine that is NOT the live box (asymmetric: the box only gets the public key).
+      ```sh
+      # On the DM's admin machine (or an air-gapped one):
+      gpg --batch --gen-key <<'KEY'
+        %no-protection
+        Key-Type: RSA
+        Key-Length: 4096
+        Name-Real: RENOVA Backup
+        Name-Email: renova-backup@spmc.local
+        Expire-Date: 0
+      KEY
+      gpg --armor --export        renova-backup@spmc.local > renova-backup-public.asc
+      gpg --armor --export-secret-keys renova-backup@spmc.local > renova-backup-private.asc   # -> sealed custody, §8
+      ```
+      **On the live box**, import ONLY the public key (the box must never hold the private half):
       ```sh
       sudo install -d -m 700 /var/lib/renova
-      # create the backup key ONCE, store the mount on a different device than the backups:
-      sudo sh -c 'umask 077; openssl rand -base64 48 > /mnt/keys/renova-backup.key'
+      gpg --import renova-backup-public.asc
       ```
+      **Verify:** `gpg --list-keys renova-backup@spmc.local` shows the key; `gpg --list-secret-keys` on the box shows **nothing** for it.
 - [ ] Install and schedule the nightly backup.
       ```sh
       sudo cp deploy/systemd/renova-backup.{service,timer} /etc/systemd/system/
@@ -112,9 +126,10 @@ set -a; source <(sudo cat /etc/renova/renova.env); set +a
       sudo systemctl start renova-backup.service    # first run now
       ```
       **Verify:** three `*.gpg` files + a `manifest-*.sha256` in the backup dest; `/var/lib/renova/last-backup.stamp` exists.
-- [ ] Prove the backup restores AND pgcrypto decrypts (do this now, then quarterly).
+- [ ] Prove the backup restores AND pgcrypto decrypts (do this now, then quarterly). The drill machine needs the escrowed **private** key imported (`RENOVA_BACKUP_GNUPGHOME` points at that keyring; set `RENOVA_BACKUP_GPG_PASSPHRASE_FILE` if the key has a passphrase).
       ```sh
-      sudo deploy/bin/restore-drill.sh /mnt/backup/renova/db-<TS>.dump.gpg
+      sudo RENOVA_BACKUP_GNUPGHOME=/root/.gnupg-restore \
+        deploy/bin/restore-drill.sh /mnt/backup/renova/db-<TS>.dump.gpg
       ```
       **Verify:** ends with `RESTORE DRILL PASSED`. Log the date in RUNBOOK §5.
 - [ ] Copy today's `*.gpg` to off-site Drive 2 custody (RUNBOOK §8).
