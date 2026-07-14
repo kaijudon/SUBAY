@@ -2,7 +2,7 @@
 
 ## What this project is
 
-SUBAY (**REN**al transplant **O**bservational **V**iral **A**rchive) is a self-hosted
+SUBAY (**S**urveillance & **U**nified **B**ioarchive for **A**ntiviral nephrolog**Y**) is a self-hosted
 Django webapp that is the single **system-of-record** for the study *"Host Clinical
 Status and Characterization of CMV in Kidney Transplant Patients in Region XI"*
 (Bad-ang et al., SPMC; DOST-PCHRD 2023-08-A2-PCHRD-CORE-TB-16258). One Data Manager

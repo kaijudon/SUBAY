@@ -45,7 +45,7 @@ class SubayAdminSite(OTPAdminSite):
 
     site_header = "SUBAY"
     site_title = "SUBAY"
-    index_title = "RENal transplant Observational Viral Archive"
+    index_title = "Surveillance & Unified Bioarchive for Antiviral nephrologY"
 
     def _section(self, name, models):
         return {

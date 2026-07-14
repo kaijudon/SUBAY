@@ -10,7 +10,7 @@ PRD: `prd/CMV-KT_Research_Database_PRD.md`
 
 ## What to build
 
-The thinnest end-to-end path through every layer of **SUBAY** (RENal transplant Observational Viral Archive), so subsequent deep-module slices have a spine to attach to. A Data Manager logs in with TOTP 2FA, enters a pseudonymous recipient + one visit + one lab result in the customized Django admin, and runs an export command that emits a de-identified CSV with no calendar dates.
+The thinnest end-to-end path through every layer of **SUBAY** (Surveillance & Unified Bioarchive for Antiviral nephrologY), so subsequent deep-module slices have a spine to attach to. A Data Manager logs in with TOTP 2FA, enters a pseudonymous recipient + one visit + one lab result in the customized Django admin, and runs an export command that emits a de-identified CSV with no calendar dates.
 
 Stack per PRD (O8 / Topic #7-D): Django + PostgreSQL (project/package `subay`), customized Django admin as the data-entry interface, django-otp (TOTP 2FA) on all roles, django-simple-history audit, Django Groups/Permissions roles. nginx/gunicorn HTTPS over a Unix socket, app bound to `127.0.0.1` only. Secrets in a root-owned `0600` env file loaded by systemd (never in repo/settings). Validation lives on the models. A `pytest`/`pytest-django` harness is established here as prior art for every later slice.
 
