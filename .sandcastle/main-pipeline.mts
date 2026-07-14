@@ -1,10 +1,17 @@
 import { execSync } from "node:child_process";
 import { createSandbox, claudeCode } from "@ai-hero/sandcastle";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
+import {
+  PLANNER_HABITS,
+  BUILDER_HABITS,
+  REVIEWER_HABITS,
+} from "./fable-habits.mts";
 
 // Multi-agent slice driver: Planner -> Builder <-> Reviewer (feedback loop).
 // Ports the Ralph hats.yml pipeline. One generic set of role prompts
-// (planner.md / builder.md / reviewer.md), parameterized per slice via {{SLICE}}.
+// (planner.md / builder.md / reviewer.md), parameterized per slice via {{SLICE}}
+// and armed with Fable's five-gate working method via {{FABLE_HABITS}}
+// (role-tailored blocks in fable-habits.mts).
 //
 // Run one slice:
 //   npx tsx .sandcastle/main-pipeline.mts 09
@@ -65,7 +72,7 @@ const plan = await box.run({
   name: `planner-${slice}`,
   agent: planner,
   promptFile: "./.sandcastle/planner.md",
-  promptArgs,
+  promptArgs: { ...promptArgs, FABLE_HABITS: PLANNER_HABITS },
   completionSignal: [PLAN_READY, PLAN_BLOCKED],
   maxIterations: 3,
 });
@@ -82,7 +89,7 @@ for (let round = 1; round <= MAX_REVIEW_ROUNDS; round++) {
     name: `builder-${slice}-r${round}`,
     agent: builder,
     promptFile: "./.sandcastle/builder.md",
-    promptArgs,
+    promptArgs: { ...promptArgs, FABLE_HABITS: BUILDER_HABITS },
     completionSignal: [BUILD_DONE, BUILD_BLOCKED],
     maxIterations: 10,
   });
@@ -94,7 +101,7 @@ for (let round = 1; round <= MAX_REVIEW_ROUNDS; round++) {
     name: `reviewer-${slice}-r${round}`,
     agent: reviewer,
     promptFile: "./.sandcastle/reviewer.md",
-    promptArgs,
+    promptArgs: { ...promptArgs, FABLE_HABITS: REVIEWER_HABITS },
     completionSignal: [APPROVED, CHANGES],
     maxIterations: 5,
   });

@@ -30,3 +30,5 @@ logs/
 # Ralph orchestrator configs — superseded by sandcastle, slated for Phase E removal.
 hats.yml
 ralph.yml
+
+generate_OTP.py

@@ -1,16 +1,16 @@
--- RENOVA — pgcrypto defense-in-depth (Slice 15, AC1).
+-- SUBAY — pgcrypto defense-in-depth (Slice 15, AC1).
 --
 -- WHY: full-disk LUKS protects data at rest while the box is OFF. pgcrypto adds a
 -- second layer for data that leaves the box — off-machine backups (Drive 2 custody,
 -- Slice 15 AC5). A stolen *backup* of an encrypted column is ciphertext, not PHI.
 --
 -- The pgcrypto symmetric key is NOT stored in the database and NOT in this repo.
--- It lives only in the root-owned 0600 secrets file (/etc/renova/renova.env, as
--- RENOVA_PGCRYPTO_KEY) and is escrowed on a SEPARATE custody path from the data
+-- It lives only in the root-owned 0600 secrets file (/etc/subay/subay.env, as
+-- SUBAY_PGCRYPTO_KEY) and is escrowed on a SEPARATE custody path from the data
 -- (Slice 15 AC5). Losing the key = unreadable backups; that is the deliberate trade.
 --
 -- Run once, as the Data Manager superuser, on the real box (HITL checkpoint):
---   psql -U <data_manager> -d renova -f deploy/sql/01-pgcrypto.sql
+--   psql -U <data_manager> -d subay -f deploy/sql/01-pgcrypto.sql
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
@@ -30,11 +30,11 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 --
 --   ALTER TABLE registry_recipient ADD COLUMN contact_note_enc bytea;
 --   UPDATE registry_recipient
---     SET contact_note_enc = pgp_sym_encrypt(contact_note, current_setting('renova.pgcrypto_key'));
+--     SET contact_note_enc = pgp_sym_encrypt(contact_note, current_setting('subay.pgcrypto_key'));
 --   ALTER TABLE registry_recipient DROP COLUMN contact_note;
 --
 -- The key is supplied per-session, never hard-coded:
---   SET renova.pgcrypto_key = '<from /etc/renova/renova.env, not echoed to history>';
+--   SET subay.pgcrypto_key = '<from /etc/subay/subay.env, not echoed to history>';
 --
 -- Verify decryption round-trips before dropping any plaintext column. An unverified
 -- encryption is indistinguishable from data loss.

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# RENOVA — safe migration wrapper (Slice 15, AC3).
-# Usage (on the real box, as the renova operator):
+# SUBAY — safe migration wrapper (Slice 15, AC3).
+# Usage (on the real box, as the subay operator):
 #   deploy/bin/safe-migrate.sh
 #
 # WHY: a migration is the one routine operation that can silently destroy data. This
@@ -11,10 +11,10 @@
 #      and refuse to auto-apply them — a human reviews the rehearsal, then applies.
 set -euo pipefail
 
-: "${DATABASE_URL:?DATABASE_URL must be set (loaded from /etc/renova/renova.env)}"
-APP_DIR="${APP_DIR:-/opt/renova}"
-PY="${PY:-/opt/conda/envs/renova_env/bin/python}"
-BACKUP_DIR="${BACKUP_DIR:-/var/backups/renova/premigrate}"
+: "${DATABASE_URL:?DATABASE_URL must be set (loaded from /etc/subay/subay.env)}"
+APP_DIR="${APP_DIR:-/opt/subay}"
+PY="${PY:-/opt/conda/envs/subay_env/bin/python}"
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/subay/premigrate}"
 DB_NAME="$(printf '%s' "$DATABASE_URL" | sed -E 's#.*/([^/?]+).*#\1#')"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 
@@ -59,10 +59,10 @@ done
 
 if [ "$NEEDS_REHEARSAL" -eq 1 ]; then
   echo ">> Rehearsing on a scratch DB restored from the backup just taken..."
-  SCRATCH="renova_scratch_${STAMP}"
+  SCRATCH="subay_scratch_${STAMP}"
   createdb "$SCRATCH"
   pg_restore --no-owner --dbname="$SCRATCH" "$DUMP"
-  DATABASE_URL="postgres://renova@127.0.0.1:5432/${SCRATCH}" \
+  DATABASE_URL="postgres://subay@127.0.0.1:5432/${SCRATCH}" \
     "$PY" manage.py migrate --no-input
   echo ">> Rehearsal succeeded on ${SCRATCH}."
   echo ">> A human must review the rehearsal, then apply to production with:"

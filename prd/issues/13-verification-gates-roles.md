@@ -1,4 +1,4 @@
-# Slice 13 — RENOVA: Verification gates & role permissions
+# Slice 13 — SUBAY: Verification gates & role permissions
 
 **Type:** AFK
 **Deep module:** none (cross-cutting; reuses Groups/Permissions + an abstract mixin)

@@ -1,4 +1,4 @@
-# Slice 12 — RENOVA: Resistance surveillance (UL97 / UL54)
+# Slice 12 — SUBAY: Resistance surveillance (UL97 / UL54)
 
 **Type:** AFK
 **Deep module:** none (curated-list three-tier rollup)

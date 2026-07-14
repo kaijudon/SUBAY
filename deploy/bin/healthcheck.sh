@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# RENOVA — push-on-failure monitoring (Slice 15, AC6).
-# Run from a frequent systemd timer (e.g. every 15 min). As the renova operator.
+# SUBAY — push-on-failure monitoring (Slice 15, AC6).
+# Run from a frequent systemd timer (e.g. every 15 min). As the subay operator.
 #
 # Watches: last-backup age, disk %, app health, SSH anomalies. PUSHES only on a
 # problem (quiet when healthy). Pairs with a DEAD-MAN'S SWITCH: this script also
@@ -8,12 +8,12 @@
 # (because a box that has gone silent can't send its own failure alert). No PHI ever.
 set -euo pipefail
 
-NOTIFY="${NOTIFY:-/opt/renova/deploy/bin/notify-operator.sh}"
-DATA_DEST="${DATA_DEST:-/var/backups/renova/data}"
+NOTIFY="${NOTIFY:-/opt/subay/deploy/bin/notify-operator.sh}"
+DATA_DEST="${DATA_DEST:-/var/backups/subay/data}"
 DISK_PATH="${DISK_PATH:-/}"
 DISK_MAX_PCT="${DISK_MAX_PCT:-85}"
 BACKUP_MAX_AGE_H="${BACKUP_MAX_AGE_H:-26}"   # daily backup + 2h grace
-DEADMAN_URL="${RENOVA_DEADMAN_URL:-}"        # external heartbeat endpoint (push on OK)
+DEADMAN_URL="${SUBAY_DEADMAN_URL:-}"        # external heartbeat endpoint (push on OK)
 
 problems=0
 alert() { "$NOTIFY" "$1" "$2"; problems=$((problems+1)); }
@@ -33,7 +33,7 @@ pct="$(df --output=pcent "$DISK_PATH" | tail -1 | tr -dc '0-9')"
   alert "disk-full" "${DISK_PATH} at ${pct}% (>=${DISK_MAX_PCT}%)"
 
 # 3. App health — gunicorn socket answers and the service is active.
-systemctl is-active --quiet renova || alert "app-down" "renova.service is not active"
+systemctl is-active --quiet subay || alert "app-down" "subay.service is not active"
 
 # 4. SSH anomalies — recent failed auths (count only, no usernames/IPs => PHI-free op data).
 fails="$(journalctl -u ssh --since '-1h' 2>/dev/null | grep -c 'Failed password\|Invalid user' || true)"

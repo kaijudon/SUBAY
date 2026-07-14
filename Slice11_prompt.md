@@ -1,14 +1,14 @@
-# Task — RENOVA Slice 11: Source attribution & genotype concordance (Obj 5)
+# Task — SUBAY Slice 11: Source attribution & genotype concordance (Obj 5)
 
 ## Context (carry forward)
-- Stack: Django + `renova` package, app `renova/registry/`. Validation lives on
-  the models. Test harness: `conda run -n renova_env python -m pytest -q`.
+- Stack: Django + `subay` package, app `subay/registry/`. Validation lives on
+  the models. Test harness: `conda run -n subay_env python -m pytest -q`.
 - Slices 00–10 are merged and green. This slice needs `GenotypeCall` rows (slice
   10) and R±/D± serostatus (slice 05).
 - Source of truth: `prd/issues/11-source-attribution-concordance.md`. Parent
   spec: `prd/CMV-KT_Research_Database_PRD.md`. Read the card before planning.
 - The export chokepoint is
-  `renova/registry/management/commands/export_analysis_set.py`. Extend it.
+  `subay/registry/management/commands/export_analysis_set.py`. Extend it.
 
 ## Goal (target state)
 The Obj 5 deliverable: a flat source label per subject and a graded per-pair
@@ -68,8 +68,8 @@ R−+QNAT+ → primary, <2 co-resolved → indeterminate). Wire export after.
 
 ## Done when
 Every acceptance-criteria box is satisfied, the full suite is green
-(`conda run -n renova_env python -m pytest -q`, old + new), migrations are clean
-(`conda run -n renova_env python manage.py makemigrations --check`), the
+(`conda run -n subay_env python -m pytest -q`, old + new), migrations are clean
+(`conda run -n subay_env python manage.py makemigrations --check`), the
 backpressure collector exits 0
-(`conda run -n renova_env python scripts/backpressure.py`), and the Reviewer hat
+(`conda run -n subay_env python scripts/backpressure.py`), and the Reviewer hat
 approves. When the Reviewer approves, print LOOP_COMPLETE.

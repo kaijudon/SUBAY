@@ -1,4 +1,4 @@
-# Slice 08 — RENOVA: Clinical events
+# Slice 08 — SUBAY: Clinical events
 
 **Type:** AFK
 **Deep module:** none (shallow data models with structured vocabularies)

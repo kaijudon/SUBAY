@@ -24,7 +24,7 @@ Template (one entry per consequential decision, IDs sequential — DEC-001, DEC-
 - Alternatives Considered:
   1. Implement Postgres views and require `DATABASE_URL=postgres://...` for tests —
      rejected: breaks the canonical test harness (`.venv/bin/python -m pytest -q`,
-     SQLite default per `pytest.ini`/`renova/settings.py`), and forcing Postgres would
+     SQLite default per `pytest.ini`/`subay/settings.py`), and forcing Postgres would
      mean touching `.env`/settings DB credentials, which is out of bounds for this slice.
   2. Conditional dual-path (views on Postgres, Python fallback on SQLite) — rejected:
      adds a config knob/feature-flag with no current requirement for it; violates

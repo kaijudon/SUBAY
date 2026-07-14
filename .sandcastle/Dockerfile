@@ -7,7 +7,16 @@ RUN apt-get update && apt-get install -y \
   jq \
   && rm -rf /var/lib/apt/lists/*
 
-# TODO: install your issue tracker's CLI here. See .sandcastle/SETUP_ISSUE_TRACKER.md
+# Issue tracker = GitHub (repo kaijudon/SUBAY). Install the GitHub CLI; the AFK
+# Tester files issues with it and the Reviewer closes them. Auth is via the GH_TOKEN
+# env var (see .sandcastle/.env.example); the bind-mounted git remote selects the repo.
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+  | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+  && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+  > /etc/apt/sources.list.d/github-cli.list \
+  && apt-get update && apt-get install -y gh \
+  && rm -rf /var/lib/apt/lists/*
 
 # NOTE: project Python deps (Django, pytest, mypy, ...) are NOT installed here.
 # sandcastle's build context is .sandcastle/, so the repo-root requirements.txt

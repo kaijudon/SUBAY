@@ -1,4 +1,4 @@
-# Slice 09 — RENOVA: Biobank ledger
+# Slice 09 — SUBAY: Biobank ledger
 
 **Type:** AFK
 **Deep module:** Biobank ledger (test target)

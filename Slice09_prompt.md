@@ -1,15 +1,15 @@
-# Task — RENOVA Slice 09: Biobank ledger
+# Task — SUBAY Slice 09: Biobank ledger
 
 ## Context (carry forward)
-- Stack: Django + `renova` package, app `renova/registry/`. Validation lives on
-  the models. Test harness: `conda run -n renova_env python -m pytest -q`.
+- Stack: Django + `subay` package, app `subay/registry/`. Validation lives on
+  the models. Test harness: `conda run -n subay_env python -m pytest -q`.
 - Slices 00–08 are merged and green. The deep ledger logic needs only an
   `Aliquot` with a volume, so build/test it independently of the visit spine; the
   per-timepoint/per-matrix FK attaches opportunistically (slice 03 is merged).
 - Source of truth: `prd/issues/09-biobank-ledger.md`. Parent spec:
   `prd/CMV-KT_Research_Database_PRD.md`. Read the card before planning.
 - The export chokepoint is
-  `renova/registry/management/commands/export_analysis_set.py`. Extend it.
+  `subay/registry/management/commands/export_analysis_set.py`. Extend it.
 
 ## Goal (target state)
 The biobank as an event-sourced ledger: tube → thaw → consumption. A Biobank
@@ -70,8 +70,8 @@ tests (assert BOTH DB CHECK and app guard fire).
 
 ## Done when
 Every acceptance-criteria box is satisfied, the full suite is green
-(`conda run -n renova_env python -m pytest -q`, old + new), migrations are clean
-(`conda run -n renova_env python manage.py makemigrations --check`), the
+(`conda run -n subay_env python -m pytest -q`, old + new), migrations are clean
+(`conda run -n subay_env python manage.py makemigrations --check`), the
 backpressure collector exits 0
-(`conda run -n renova_env python scripts/backpressure.py`), and the Reviewer hat
+(`conda run -n subay_env python scripts/backpressure.py`), and the Reviewer hat
 approves. When the Reviewer approves, print LOOP_COMPLETE.

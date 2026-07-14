@@ -1,15 +1,15 @@
-# Task — RENOVA Slice 03: Visit spine & closure-shift scheduling
+# Task — SUBAY Slice 03: Visit spine & closure-shift scheduling
 
 ## Context (carry forward)
-- Stack: Django + `renova` package, app `renova/registry/`. Validation lives on
-  the models. Test harness: `conda run -n renova_env python -m pytest -q`
+- Stack: Django + `subay` package, app `subay/registry/`. Validation lives on
+  the models. Test harness: `conda run -n subay_env python -m pytest -q`
   (pytest-django).
 - Slices 00–02 are merged and green. This slice ADDS the visit-scheduling spine
   every lab and episode later joins to; it does not rewrite the subject layer.
 - Source of truth: `prd/issues/03-visit-spine-closure-shift.md`. Parent spec:
   `prd/CMV-KT_Research_Database_PRD.md`. Read the card before planning.
-- Subjects live in `renova/registry/models.py`. The export chokepoint is
-  `renova/registry/management/commands/export_analysis_set.py`. Extend THOSE.
+- Subjects live in `subay/registry/models.py`. The export chokepoint is
+  `subay/registry/management/commands/export_analysis_set.py`. Extend THOSE.
 
 ## Goal (target state)
 The visit-scheduling spine. A Data Manager schedules the six recipient
@@ -72,8 +72,8 @@ test-first (a failing test per criterion, confirm red, then implement to green).
 
 ## Done when
 Every acceptance-criteria box is satisfied, the full suite is green
-(`conda run -n renova_env python -m pytest -q`, old + new), migrations are clean
-(`conda run -n renova_env python manage.py makemigrations --check`), the
+(`conda run -n subay_env python -m pytest -q`, old + new), migrations are clean
+(`conda run -n subay_env python manage.py makemigrations --check`), the
 backpressure collector exits 0
-(`conda run -n renova_env python scripts/backpressure.py`), and the Reviewer hat
+(`conda run -n subay_env python scripts/backpressure.py`), and the Reviewer hat
 approves. When the Reviewer approves, print LOOP_COMPLETE.

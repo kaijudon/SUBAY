@@ -1,4 +1,4 @@
-# Slice 06 — RENOVA: TBNK / renal / drug-level panels
+# Slice 06 — SUBAY: TBNK / renal / drug-level panels
 
 **Type:** AFK
 **Deep module:** none (eGFR + ratio are derived-variable contracts)

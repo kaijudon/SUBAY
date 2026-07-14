@@ -1,4 +1,4 @@
-# RENOVA — UPS + clean-shutdown daemon (Slice 15, AC4)
+# SUBAY — UPS + clean-shutdown daemon (Slice 15, AC4)
 
 **WHY:** Davao mains power is unreliable. A hard power-cut mid-write can corrupt
 Postgres (torn pages, lost WAL). A UPS buys minutes; a shutdown daemon spends those
@@ -15,23 +15,23 @@ sudo apt install nut
 ### `/etc/nut/ups.conf` — describe the UPS
 
 ```ini
-[renova-ups]
+[subay-ups]
     driver = usbhid-ups        # most USB consumer UPSes; confirm with `nut-scanner`
     port = auto
-    desc = "RENOVA workstation UPS"
+    desc = "SUBAY workstation UPS"
 ```
 
 ### `/etc/nut/upsmon.conf` — when to shut down
 
 ```ini
-MONITOR renova-ups@localhost 1 upsmon <password-from-/etc/renova/renova.env> master
+MONITOR subay-ups@localhost 1 upsmon <password-from-/etc/subay/subay.env> master
 # On low battery, NUT calls SHUTDOWNCMD. Give Postgres a clean stop, then power off.
 SHUTDOWNCMD "/bin/systemctl poweroff"
 # Trigger shutdown while charge remains for a clean flush (don't wait for 0%).
 ```
 
 Order matters: systemd already orders `postgresql.service` before `poweroff.target`,
-so a `systemctl poweroff` stops gunicorn (`renova.service`) and Postgres cleanly before
+so a `systemctl poweroff` stops gunicorn (`subay.service`) and Postgres cleanly before
 the UPS battery dies. **Test it**: pull mains power and confirm the box powers off by
 itself with the database intact (restore-drill afterwards if unsure).
 
