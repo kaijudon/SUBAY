@@ -1,15 +1,15 @@
-# Task — RENOVA Slice 10: Genotyping ingest
+# Task — SUBAY Slice 10: Genotyping ingest
 
 ## Context (carry forward)
-- Stack: Django + `renova` package, app `renova/registry/`. Validation lives on
-  the models. Test harness: `conda run -n renova_env python -m pytest -q`.
+- Stack: Django + `subay` package, app `subay/registry/`. Validation lives on
+  the models. Test harness: `conda run -n subay_env python -m pytest -q`.
 - Slices 00–09 are merged and green. `GenotypingResult` anchors to the slice 09
   `Aliquot`; `ConsumptionEvent.pipeline_run` (slice 09's nullable hook) now points
   at the created run. Optional CMVEpisode FK uses slice 07.
 - Source of truth: `prd/issues/10-genotyping-ingest.md`. Parent spec:
   `prd/CMV-KT_Research_Database_PRD.md`. Read the card before planning.
 - The export chokepoint is
-  `renova/registry/management/commands/export_analysis_set.py`. Extend it.
+  `subay/registry/management/commands/export_analysis_set.py`. Extend it.
 
 ## Goal (target state)
 The genotyping module records provenance, not orchestration — Django is the
@@ -78,8 +78,8 @@ export after.
 
 ## Done when
 Every acceptance-criteria box is satisfied, the full suite is green
-(`conda run -n renova_env python -m pytest -q`, old + new), migrations are clean
-(`conda run -n renova_env python manage.py makemigrations --check`), the
+(`conda run -n subay_env python -m pytest -q`, old + new), migrations are clean
+(`conda run -n subay_env python manage.py makemigrations --check`), the
 backpressure collector exits 0
-(`conda run -n renova_env python scripts/backpressure.py`), and the Reviewer hat
+(`conda run -n subay_env python scripts/backpressure.py`), and the Reviewer hat
 approves. When the Reviewer approves, print LOOP_COMPLETE.

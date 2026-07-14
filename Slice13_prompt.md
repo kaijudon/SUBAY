@@ -1,8 +1,8 @@
-# Task — RENOVA Slice 13: Verification gates & role permissions
+# Task — SUBAY Slice 13: Verification gates & role permissions
 
 ## Context (carry forward)
-- Stack: Django + `renova` package, app `renova/registry/`. Validation lives on
-  the models. Test harness: `conda run -n renova_env python -m pytest -q`.
+- Stack: Django + `subay` package, app `subay/registry/`. Validation lives on
+  the models. Test harness: `conda run -n subay_env python -m pytest -q`.
 - Slices 00–12 are merged and green. This is cross-cutting and lands AFTER the
   outcome-critical models exist: serostatus/drug levels (slice 05), episode
   adjudication (slice 07), genotype calls (slice 10).
@@ -61,8 +61,8 @@ models. Confirm the gate fires on the shell/ingest path, not just admin.
 
 ## Done when
 Every acceptance-criteria box is satisfied, the full suite is green
-(`conda run -n renova_env python -m pytest -q`, old + new), migrations are clean
-(`conda run -n renova_env python manage.py makemigrations --check`), the
+(`conda run -n subay_env python -m pytest -q`, old + new), migrations are clean
+(`conda run -n subay_env python manage.py makemigrations --check`), the
 backpressure collector exits 0
-(`conda run -n renova_env python scripts/backpressure.py`), and the Reviewer hat
+(`conda run -n subay_env python scripts/backpressure.py`), and the Reviewer hat
 approves. When the Reviewer approves, print LOOP_COMPLETE.

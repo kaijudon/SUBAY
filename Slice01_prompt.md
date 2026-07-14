@@ -1,14 +1,14 @@
-# Task — RENOVA Slice 01: Export / de-id chokepoint
+# Task — SUBAY Slice 01: Export / de-id chokepoint
 
 ## Context (carry forward)
-- Stack: Django + `renova` package, app `renova/registry/`. Validation lives on
-  the models. Test harness: `conda run -n renova_env python -m pytest -q` (pytest-django).
+- Stack: Django + `subay` package, app `subay/registry/`. Validation lives on
+  the models. Test harness: `conda run -n subay_env python -m pytest -q` (pytest-django).
 - Slice 00 is merged and green (21 tests). This slice EXTENDS it; it does not
   rewrite it.
 - Source of truth: `prd/issues/01-export-de-id-chokepoint.md`. Parent spec:
   `prd/CMV-KT_Research_Database_PRD.md`. Read the card before planning.
 - Current export lives at
-  `renova/registry/management/commands/export_analysis_set.py` and already emits
+  `subay/registry/management/commands/export_analysis_set.py` and already emits
   per-model CSVs with day-offsets. Harden THAT file — do not start over.
 
 ## Goal (target state)
@@ -50,7 +50,7 @@ MUST NOT:
 
 ## DB note — surface, do not silently decide
 The card specifies derived values "materialized via Postgres views", but
-`renova/settings.py` defaults `DATABASE_URL` to **sqlite**. Before implementing
+`subay/settings.py` defaults `DATABASE_URL` to **sqlite**. Before implementing
 view-based materialization, decide and STATE in the plan: run tests against
 Postgres (`DATABASE_URL=postgres://...`), or compute derived values in the
 command for the sqlite default. If a Postgres-only feature cannot run on the
@@ -77,6 +77,6 @@ test-first: add a failing test per criterion (including the seeded-identifier
 refusal), confirm red, then implement to green.
 
 ## Done when
-Every acceptance-criteria box is satisfied, `conda run -n renova_env python -m pytest -q` is
+Every acceptance-criteria box is satisfied, `conda run -n subay_env python -m pytest -q` is
 fully green (old + new tests), and the Reviewer hat approves. When the Reviewer
 approves, print LOOP_COMPLETE.

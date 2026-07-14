@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# RENOVA — UFW firewall setup (Slice 15, AC2).
+# SUBAY — UFW firewall setup (Slice 15, AC2).
 # Run once on the real box as root (HITL checkpoint). Idempotent.
 #
 # WHY: default-deny inbound. The app is localhost-only (nginx on 127.0.0.1), so the

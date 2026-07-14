@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# RENOVA — quarterly restore drill (Slice 15, AC5).
+# SUBAY — quarterly restore drill (Slice 15, AC5).
 # Run every quarter. Proves the backup is RESTORABLE and pgcrypto DECRYPTS end-to-end.
 # A backup nobody has restored is a guess, not a backup.
 #
@@ -8,9 +8,9 @@ set -euo pipefail
 
 DUMP="${1:?path to a Postgres .dump from backup.sh}"
 SECRETS_ARCHIVE="${2:?path to the secrets_*.tar.gz.gpg from the key custody path}"
-PY="${PY:-/opt/conda/envs/renova_env/bin/python}"
-APP_DIR="${APP_DIR:-/opt/renova}"
-DRILL_DB="renova_drill_$(date -u +%Y%m%dT%H%M%SZ)"
+PY="${PY:-/opt/conda/envs/subay_env/bin/python}"
+APP_DIR="${APP_DIR:-/opt/subay}"
+DRILL_DB="subay_drill_$(date -u +%Y%m%dT%H%M%SZ)"
 
 cleanup() { dropdb --if-exists "$DRILL_DB" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
@@ -22,7 +22,7 @@ pg_restore --no-owner --dbname="$DRILL_DB" "$DUMP"
 echo ">> 2. Recover the pgcrypto key from the SEPARATE-custody secrets archive."
 TMPKEYDIR="$(mktemp -d)"; trap 'rm -rf "$TMPKEYDIR"; cleanup' EXIT
 gpg --batch --yes --decrypt "$SECRETS_ARCHIVE" | tar -C "$TMPKEYDIR" -xzf -
-PGCRYPTO_KEY="$(grep -E '^RENOVA_PGCRYPTO_KEY=' "$TMPKEYDIR"/renova.env | cut -d= -f2-)"
+PGCRYPTO_KEY="$(grep -E '^SUBAY_PGCRYPTO_KEY=' "$TMPKEYDIR"/subay.env | cut -d= -f2-)"
 [ -n "$PGCRYPTO_KEY" ] || { echo "!! key not found in secrets archive" >&2; exit 1; }
 
 echo ">> 3. Prove an encrypted column DECRYPTS with the recovered key."

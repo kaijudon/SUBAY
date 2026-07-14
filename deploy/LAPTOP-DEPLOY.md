@@ -1,6 +1,6 @@
-# RENOVA — Laptop Deploy Day (beginner-friendly)
+# SUBAY — Laptop Deploy Day (beginner-friendly)
 
-One ordered page to turn a fresh laptop into the team's RENOVA workstation. Follow it
+One ordered page to turn a fresh laptop into the team's SUBAY workstation. Follow it
 **top to bottom** — do not skip ahead. Each step says what to type, what you should see,
 and how to know it worked.
 
@@ -15,7 +15,7 @@ and how to know it worked.
 
 ```
 Phase 1: Install Ubuntu + turn on disk encryption   (the foundation — do FIRST)
-Phase 2: Get the code + set up the app              (makes RENOVA run)
+Phase 2: Get the code + set up the app              (makes SUBAY run)
 Phase 3: Fill in the secrets + database             (makes it usable)
 Phase 4: Harden the box (Slice 15)                  (makes it safe for patient data)
 ```
@@ -73,30 +73,30 @@ sudo ln -sf /opt/conda/bin/conda /usr/local/bin/conda
 
 **✅ Check:** `conda --version` prints a version number.
 
-### 2.3 — Download RENOVA
+### 2.3 — Download SUBAY
 
 ```sh
-sudo git clone https://github.com/kaijudon/RENOVA.git /opt/renova
-sudo chown -R "$USER" /opt/renova
-cd /opt/renova
+sudo git clone https://github.com/kaijudon/SUBAY.git /opt/subay
+sudo chown -R "$USER" /opt/subay
+cd /opt/subay
 ```
 
 > You'll be asked for your GitHub username + a **personal access token** (not your
 > password). If you don't have one: github.com → Settings → Developer settings →
 > Personal access tokens → generate one with "repo" access.
 
-**✅ Check:** `ls /opt/renova` shows folders like `deploy`, `renova`, `manage.py`.
+**✅ Check:** `ls /opt/subay` shows folders like `deploy`, `subay`, `manage.py`.
 
 ### 2.4 — Build the app's environment
 
 ```sh
-conda env create -f /opt/renova/environment.yml -p /opt/conda/envs/renova_env
+conda env create -f /opt/subay/environment.yml -p /opt/conda/envs/subay_env
 ```
 
 This downloads everything the app needs — takes a few minutes.
 
 **✅ Check:** the command ends without "error", and
-`/opt/conda/envs/renova_env/bin/python --version` prints a Python version.
+`/opt/conda/envs/subay_env/bin/python --version` prints a Python version.
 
 ---
 
@@ -114,9 +114,9 @@ sudo systemctl enable --now postgresql
 ### 3.2 — Make the database + app login
 
 ```sh
-sudo -u postgres psql -c "CREATE DATABASE renova;"
-sudo -u postgres psql -c "CREATE ROLE renova LOGIN PASSWORD 'CHANGE-ME-STRONG';"
-sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE renova TO renova;"
+sudo -u postgres psql -c "CREATE DATABASE subay;"
+sudo -u postgres psql -c "CREATE ROLE subay LOGIN PASSWORD 'CHANGE-ME-STRONG';"
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE subay TO subay;"
 ```
 
 > Replace `CHANGE-ME-STRONG` with a real password. Make one with:
@@ -132,15 +132,15 @@ shared. First generate the values:
 
 ```sh
 echo "DJANGO_SECRET_KEY: "; python3 -c 'import secrets; print(secrets.token_urlsafe(64))'
-echo "RENOVA_PGCRYPTO_KEY: "; openssl rand -base64 48
+echo "SUBAY_PGCRYPTO_KEY: "; openssl rand -base64 48
 ```
 
 Now make the file:
 
 ```sh
-sudo install -d -m 700 /etc/renova
-sudo install -m 600 /opt/renova/deploy/renova.env.example /etc/renova/renova.env
-sudo nano /etc/renova/renova.env
+sudo install -d -m 700 /etc/subay
+sudo install -m 600 /opt/subay/deploy/subay.env.example /etc/subay/subay.env
+sudo nano /etc/subay/subay.env
 ```
 
 `nano` is a simple text editor. Fill in the real values you generated (the database
@@ -150,15 +150,15 @@ password from 3.2 goes into `DATABASE_URL`). Save with **Ctrl+O**, Enter, then e
 > ⚠️ Never paste this file's contents into chat, email, or git. Anyone who reads it owns
 > the whole system.
 
-**✅ Check:** `stat -c '%U %a' /etc/renova/renova.env` prints exactly `root 600`.
+**✅ Check:** `stat -c '%U %a' /etc/subay/subay.env` prints exactly `root 600`.
 
 ### 3.4 — Set up the database tables + your admin login
 
 ```sh
-cd /opt/renova
-set -a; source /etc/renova/renova.env; set +a
-/opt/conda/envs/renova_env/bin/python manage.py migrate
-/opt/conda/envs/renova_env/bin/python manage.py createsuperuser
+cd /opt/subay
+set -a; source /etc/subay/subay.env; set +a
+/opt/conda/envs/subay_env/bin/python manage.py migrate
+/opt/conda/envs/subay_env/bin/python manage.py createsuperuser
 ```
 
 Follow the prompts to make your admin username + password.
@@ -168,7 +168,7 @@ Follow the prompts to make your admin username + password.
 ### 3.5 — First run (test it works before hardening)
 
 ```sh
-/opt/conda/envs/renova_env/bin/python manage.py runserver 127.0.0.1:8000
+/opt/conda/envs/subay_env/bin/python manage.py runserver 127.0.0.1:8000
 ```
 
 Open Firefox → `http://127.0.0.1:8000/admin/`.
@@ -176,7 +176,7 @@ Open Firefox → `http://127.0.0.1:8000/admin/`.
 > You'll hit a two-factor (OTP) prompt. First time, you need to enroll a code — ask for
 > the "TOTP bootstrap" steps (same as we did on the dev box) if it blocks you.
 
-**✅ Check:** you can log into `/admin/` and see the RENOVA interface. Press **Ctrl+C** in
+**✅ Check:** you can log into `/admin/` and see the SUBAY interface. Press **Ctrl+C** in
 the terminal to stop the test server.
 
 > This `runserver` is just a test. The real, always-on service is set up by the Slice 0
@@ -196,7 +196,7 @@ section does and why. **Do the sections in order.**
 | **§1** | Lock down secrets + encrypt sensitive DB columns | `deploy/sql/01-pgcrypto.sql` |
 | **§2** | Firewall + SSH lockout so outsiders can't reach the box | `deploy/firewall/ufw-setup.sh` |
 | **§3** | Safe way to change the database without losing data | `deploy/bin/safe-migrate.sh` |
-| **§4** | Auto-updates, battery shutdown, lid-stays-open | `deploy/apt/50unattended-upgrades-renova`, RUNBOOK §4 |
+| **§4** | Auto-updates, battery shutdown, lid-stays-open | `deploy/apt/50unattended-upgrades-subay`, RUNBOOK §4 |
 | **§5** | Nightly backups + a test that they actually restore | `deploy/bin/backup.sh` |
 | **§6** | Alerts you when something breaks (no patient data in alerts) | `deploy/bin/healthcheck.sh` |
 | **§7** | Tamper-proof audit history + trustworthy clock | `deploy/sql/02-restrict-superuser.sql` |

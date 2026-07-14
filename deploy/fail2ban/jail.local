@@ -1,4 +1,4 @@
-# RENOVA — fail2ban (Slice 15, AC2).
+# SUBAY — fail2ban (Slice 15, AC2).
 # Install at /etc/fail2ban/jail.local, then: sudo systemctl enable --now fail2ban
 #
 # WHY: even with key-only SSH, a flood of failed attempts is noise and an attack

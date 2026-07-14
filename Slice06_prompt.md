@@ -1,14 +1,14 @@
-# Task — RENOVA Slice 06: TBNK / renal / drug-level panels
+# Task — SUBAY Slice 06: TBNK / renal / drug-level panels
 
 ## Context (carry forward)
-- Stack: Django + `renova` package, app `renova/registry/`. Validation lives on
-  the models. Test harness: `conda run -n renova_env python -m pytest -q`.
+- Stack: Django + `subay` package, app `subay/registry/`. Validation lives on
+  the models. Test harness: `conda run -n subay_env python -m pytest -q`.
 - Slices 00–05 are merged and green. Labs attach to the slice 03 visit spine and
   follow the dual-FK exactly-one pattern established in slice 05.
 - Source of truth: `prd/issues/06-tbnk-renal-drug-panels.md`. Parent spec:
   `prd/CMV-KT_Research_Database_PRD.md`. Read the card before planning.
 - The export chokepoint is
-  `renova/registry/management/commands/export_analysis_set.py`. Extend it.
+  `subay/registry/management/commands/export_analysis_set.py`. Extend it.
 
 ## Goal (target state)
 The remaining measured-every-visit panels, each demonstrating the
@@ -61,8 +61,8 @@ failing test per criterion, confirm red, then implement to green).
 
 ## Done when
 Every acceptance-criteria box is satisfied, the full suite is green
-(`conda run -n renova_env python -m pytest -q`, old + new), migrations are clean
-(`conda run -n renova_env python manage.py makemigrations --check`), the
+(`conda run -n subay_env python -m pytest -q`, old + new), migrations are clean
+(`conda run -n subay_env python manage.py makemigrations --check`), the
 backpressure collector exits 0
-(`conda run -n renova_env python scripts/backpressure.py`), and the Reviewer hat
+(`conda run -n subay_env python scripts/backpressure.py`), and the Reviewer hat
 approves. When the Reviewer approves, print LOOP_COMPLETE.

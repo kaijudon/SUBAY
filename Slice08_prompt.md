@@ -1,14 +1,14 @@
-# Task — RENOVA Slice 08: Clinical events
+# Task — SUBAY Slice 08: Clinical events
 
 ## Context (carry forward)
-- Stack: Django + `renova` package, app `renova/registry/`. Validation lives on
-  the models. Test harness: `conda run -n renova_env python -m pytest -q`.
+- Stack: Django + `subay` package, app `subay/registry/`. Validation lives on
+  the models. Test harness: `conda run -n subay_env python -m pytest -q`.
 - Slices 00–07 are merged and green. Events anchor to the subject timeline
   (slice 03 visit spine).
 - Source of truth: `prd/issues/08-clinical-events.md`. Parent spec:
   `prd/CMV-KT_Research_Database_PRD.md`. Read the card before planning.
 - The export chokepoint is
-  `renova/registry/management/commands/export_analysis_set.py`. Extend it.
+  `subay/registry/management/commands/export_analysis_set.py`. Extend it.
 
 ## Goal (target state)
 The clinical-event layer that makes the immunosuppression↔CMV trade-off
@@ -66,8 +66,8 @@ auto-inferred attribution" test is the load-bearing one.
 
 ## Done when
 Every acceptance-criteria box is satisfied, the full suite is green
-(`conda run -n renova_env python -m pytest -q`, old + new), migrations are clean
-(`conda run -n renova_env python manage.py makemigrations --check`), the
+(`conda run -n subay_env python -m pytest -q`, old + new), migrations are clean
+(`conda run -n subay_env python manage.py makemigrations --check`), the
 backpressure collector exits 0
-(`conda run -n renova_env python scripts/backpressure.py`), and the Reviewer hat
+(`conda run -n subay_env python scripts/backpressure.py`), and the Reviewer hat
 approves. When the Reviewer approves, print LOOP_COMPLETE.

@@ -1,11 +1,11 @@
-# Slice 0 — RENOVA Walking Skeleton — Design
+# Slice 0 — SUBAY Walking Skeleton — Design
 
 *Fresh build under `renova_final/`. Source card: `prd/issues/00-walking-skeleton.md`.
 Source PRD: `prd/CMV-KT_Research_Database_PRD.md` (O8 / Topic #7-D).*
 
 ## Goal
 
-The thinnest end-to-end path through every layer of RENOVA (RENal transplant
+The thinnest end-to-end path through every layer of SUBAY (RENal transplant
 Observational Viral Archive) so the deep-module slices have a spine to attach to:
 a Data Manager logs in with TOTP 2FA, enters a pseudonymous recipient + one visit +
 one CMV serology in the customized Django admin, and runs an export that emits a
@@ -20,7 +20,7 @@ nginx HTTPS bound to `127.0.0.1`; secrets from a root-owned `0600` systemd env f
 
 ## Architecture
 
-Single `renova` project, single `registry` app ("one tidy workspace" — split later
+Single `subay` project, single `registry` app ("one tidy workspace" — split later
 when there is enough to justify it). Validation lives on the models, so the admin,
 the shell, and any future ingest command all enforce the same rules.
 
@@ -49,7 +49,7 @@ the shell, and any future ingest command all enforce the same rules.
    impossible on every write path (admin, shell, future bulk import).
 4. **Opaque subject IDs.** Format `[S|D]CMV[R|D][NN]` is validated, never generated —
    the identity map lives outside the app. `"07"` is a string, never coerced to `7`.
-5. **OTP admin via a module boundary.** `RenovaAdminSite(OTPAdminSite)` lives in its
+5. **OTP admin via a module boundary.** `SubayAdminSite(OTPAdminSite)` lives in its
    own `sites.py`; `AdminConfig.default_site` points at it so every admin login
    requires TOTP with no bespoke security code. The class is kept out of `admin.py`
    to avoid re-entrant lazy-site resolution during admin autodiscover.

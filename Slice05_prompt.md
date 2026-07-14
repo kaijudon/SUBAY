@@ -1,13 +1,13 @@
-# Task — RENOVA Slice 05: Viral-load & serology capture
+# Task — SUBAY Slice 05: Viral-load & serology capture
 
 ## Context (carry forward)
-- Stack: Django + `renova` package, app `renova/registry/`. Validation lives on
-  the models. Test harness: `conda run -n renova_env python -m pytest -q`.
+- Stack: Django + `subay` package, app `subay/registry/`. Validation lives on
+  the models. Test harness: `conda run -n subay_env python -m pytest -q`.
 - Slices 00–04 are merged and green. Labs attach to the slice 03 visit spine.
 - Source of truth: `prd/issues/05-viral-load-serology.md`. Parent spec:
   `prd/CMV-KT_Research_Database_PRD.md`. Read the card before planning.
 - The export chokepoint is
-  `renova/registry/management/commands/export_analysis_set.py`. Extend it.
+  `subay/registry/management/commands/export_analysis_set.py`. Extend it.
 
 ## Goal (target state)
 The two CMV-status panels the critical-path modules read: the long viral-load
@@ -65,8 +65,8 @@ derivation and pre-KT serostatus are derived-variable contracts — work test-fi
 
 ## Done when
 Every acceptance-criteria box is satisfied, the full suite is green
-(`conda run -n renova_env python -m pytest -q`, old + new), migrations are clean
-(`conda run -n renova_env python manage.py makemigrations --check`), the
+(`conda run -n subay_env python -m pytest -q`, old + new), migrations are clean
+(`conda run -n subay_env python manage.py makemigrations --check`), the
 backpressure collector exits 0
-(`conda run -n renova_env python scripts/backpressure.py`), and the Reviewer hat
+(`conda run -n subay_env python scripts/backpressure.py`), and the Reviewer hat
 approves. When the Reviewer approves, print LOOP_COMPLETE.

@@ -3,7 +3,7 @@ import { createSandbox, claudeCode } from "@ai-hero/sandcastle";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 
 // One-off cumulative auditor: a single Reviewer agent audits the whole
-// renova/registry codebase (merged slices 01–10) on an isolated branch and
+// subay/registry codebase (merged slices 01–10) on an isolated branch and
 // commits its findings report. Read-only except for the report; NOT merged.
 //
 //   npx tsx .sandcastle/audit-pipeline.mts

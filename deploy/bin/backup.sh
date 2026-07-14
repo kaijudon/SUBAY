@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# RENOVA — three-part backup (Slice 15, AC5).
-# Run from a systemd timer (see RUNBOOK §5). As the renova operator.
+# SUBAY — three-part backup (Slice 15, AC5).
+# Run from a systemd timer (see RUNBOOK §5). As the subay operator.
 #
 # Three parts, because restoring needs ALL THREE to be useful:
 #   1. Postgres dump          (the data)
@@ -12,13 +12,13 @@
 # not just copied — see RUNBOOK §5/§8.
 set -euo pipefail
 
-: "${DATABASE_URL:?set via /etc/renova/renova.env}"
+: "${DATABASE_URL:?set via /etc/subay/subay.env}"
 : "${BACKUP_GPG_RECIPIENT:?GPG key id/email that encrypts the media + secrets archives}"
-APP_DIR="${APP_DIR:-/opt/renova}"
-MEDIA_ROOT="${MEDIA_ROOT:-/opt/renova/media}"
-SECRETS_FILE="${SECRETS_FILE:-/etc/renova/renova.env}"
-DATA_DEST="${DATA_DEST:-/var/backups/renova/data}"      # Drive 1 / primary
-KEY_DEST="${KEY_DEST:-/mnt/keycustody/renova}"          # separate custody path
+APP_DIR="${APP_DIR:-/opt/subay}"
+MEDIA_ROOT="${MEDIA_ROOT:-/opt/subay/media}"
+SECRETS_FILE="${SECRETS_FILE:-/etc/subay/subay.env}"
+DATA_DEST="${DATA_DEST:-/var/backups/subay/data}"      # Drive 1 / primary
+KEY_DEST="${KEY_DEST:-/mnt/keycustody/subay}"          # separate custody path
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 DB_NAME="$(printf '%s' "$DATABASE_URL" | sed -E 's#.*/([^/?]+).*#\1#')"
 

@@ -1,0 +1,11 @@
+# SUBAY — weekly history export unit (Slice 15, AC7). Pairs with the .timer.
+[Unit]
+Description=SUBAY tamper-evident history export
+After=postgresql.service
+
+[Service]
+Type=oneshot
+User=subay
+Group=subay
+EnvironmentFile=/etc/subay/subay.env
+ExecStart=/opt/subay/deploy/bin/export-history.sh

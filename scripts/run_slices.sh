@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# run_slices.sh — drive RENOVA slices 03..14 through the Ralph 3-hat pipeline
+# run_slices.sh — drive SUBAY slices 03..14 through the Ralph 3-hat pipeline
 # (Planner -> Builder -> Reviewer) sequentially, one slice per `ralph run`.
 #
 # Why a driver: `ralph run` processes ONE prompt file per invocation. Numeric
@@ -39,7 +39,7 @@ if [[ ${#SLICES[@]} -eq 0 ]]; then
   exit 2
 fi
 MAX_ITERS=10
-CONDA="conda run -n renova_env"
+CONDA="conda run -n subay_env"
 LOGDIR="$ROOT/logs"
 mkdir -p "$LOGDIR"
 

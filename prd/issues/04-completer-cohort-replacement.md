@@ -1,4 +1,4 @@
-# Slice 04 — RENOVA: Completer cohort & replacement (D1 + replacement)
+# Slice 04 — SUBAY: Completer cohort & replacement (D1 + replacement)
 
 **Type:** AFK
 **Deep module:** none (cohort-status contract; feeds CONSORT)
