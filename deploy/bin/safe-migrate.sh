@@ -3,8 +3,8 @@
 # =============================================================================
 # Use this INSTEAD of `manage.py migrate` on the production box. Run as root so it
 # can create the scratch DB via the postgres superuser:
-#     cd /opt/renova
-#     set -a; source <(sudo cat /etc/renova/renova.env); set +a
+#     cd /opt/subay
+#     set -a; source <(sudo cat /etc/subay/subay.env); set +a
 #     sudo -E deploy/bin/safe-migrate.sh
 #
 # Acceptance (issue 15): "pg_dump before every migrate, applies additive migrations
@@ -26,10 +26,10 @@
 # =============================================================================
 set -euo pipefail
 
-PYTHON="${RENOVA_PYTHON:-/opt/conda/envs/renova_env/bin/python}"
-MANAGE="${RENOVA_DIR:-/opt/renova}/manage.py"
-BACKUP_DIR="${RENOVA_MIGRATE_BACKUPS:-/var/backups/renova/pre-migrate}"
-PG_SUPERUSER="${RENOVA_PG_SUPERUSER:-postgres}"   # OS user for peer-auth admin ops
+PYTHON="${SUBAY_PYTHON:-/opt/conda/envs/subay_env/bin/python}"
+MANAGE="${SUBAY_DIR:-/opt/subay}/manage.py"
+BACKUP_DIR="${SUBAY_MIGRATE_BACKUPS:-/var/backups/subay/pre-migrate}"
+PG_SUPERUSER="${SUBAY_PG_SUPERUSER:-postgres}"   # OS user for peer-auth admin ops
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
 
 [[ -n "${DATABASE_URL:-}" ]] || { echo "DATABASE_URL not set — load the env file, run with sudo -E." >&2; exit 1; }
@@ -42,10 +42,10 @@ DB_NAME="$(printf '%s' "$DATABASE_URL"  | sed -E 's#.*/([^/?]+)(\?.*)?$#\1#')"
 DB_ROLE="$(printf '%s' "$DATABASE_URL" | sed -nE 's#^[^:]+://([^:/@]+)[:@].*#\1#p')"
 if [[ -z "$DB_ROLE" ]]; then
     echo "could not parse a DB role from DATABASE_URL — the scratch rehearsal needs one." >&2
-    echo "expected postgres://ROLE:pass@host/db; set RENOVA_PG_SUPERUSER/DATABASE_URL accordingly." >&2
+    echo "expected postgres://ROLE:pass@host/db; set SUBAY_PG_SUPERUSER/DATABASE_URL accordingly." >&2
     exit 1
 fi
-SCRATCH_DB="renova_scratch_${TS}"
+SCRATCH_DB="subay_scratch_${TS}"
 SCRATCH_URL="$(printf '%s' "$DATABASE_URL" | sed -E "s#/${DB_NAME}(\?|$)#/${SCRATCH_DB}\1#")"
 
 echo "==> [1/4] pg_dump ${DB_NAME} -> rollback point"
@@ -72,12 +72,12 @@ echo "==> [2/4] migration plan"
 # formatted (multi-line operations, comments) and to bracket-splitting in the
 # plan output. Prints the name of every migration that needs a rehearsal.
 NEEDS_REHEARSAL=0
-RISKY="$(RENOVA_DIR="${RENOVA_DIR:-/opt/renova}" "$PYTHON" - <<'PY'
+RISKY="$(SUBAY_DIR="${SUBAY_DIR:-/opt/subay}" "$PYTHON" - <<'PY'
 import os, sys
 # Bare `python -` has no Django context (unlike manage.py), so bootstrap settings
 # before touching the ORM connection — mirrors scripts/otp_token.py.
-sys.path.insert(0, os.environ.get("RENOVA_DIR", "/opt/renova"))
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "renova.settings")
+sys.path.insert(0, os.environ.get("SUBAY_DIR", "/opt/subay"))
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "subay.settings")
 import django
 django.setup()
 from django.db.migrations.loader import MigrationLoader

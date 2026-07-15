@@ -1,4 +1,4 @@
-# Slice 15 — RENOVA: Production hardening & operations
+# Slice 15 — SUBAY: Production hardening & operations
 
 **Type:** HITL (physical SPMC workstation + DPO/operator sign-off + human custody procedures)
 **Deep module:** none (systemd units, nginx/gunicorn config, wrapper scripts, cron — not Django-app code)

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sequential RENOVA slice driver — replaces the old Ralph loop.
+# Sequential SUBAY slice driver — replaces the old Ralph loop.
 # Runs each remaining slice through the multi-agent pipeline
 # (.sandcastle/main-pipeline.mts: Planner -> Builder <-> Reviewer), one at a time.
 # The pipeline commits on agent/slice-NN and, on approval, merges into the
@@ -23,7 +23,7 @@ fi
 
 for n in "${SLICES[@]}"; do
   echo "========================================"
-  echo "=== RENOVA Slice ${n} (Planner -> Builder <-> Reviewer)"
+  echo "=== SUBAY Slice ${n} (Planner -> Builder <-> Reviewer)"
   echo "========================================"
   # main-pipeline.mts exits nonzero if any stage blocks or no approval is reached.
   # The `if` lets us print a clear message before `exit` (set -e would otherwise

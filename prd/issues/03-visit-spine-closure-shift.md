@@ -1,4 +1,4 @@
-# Slice 03 — RENOVA: Visit spine & closure-shift scheduling
+# Slice 03 — SUBAY: Visit spine & closure-shift scheduling
 
 **Type:** AFK
 **Deep module:** Visit scheduling & closure-shift (recommended test target — load-bearing for the KM/TBNK time axis)

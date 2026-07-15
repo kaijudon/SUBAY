@@ -1,4 +1,4 @@
-# Slice 02 — RENOVA: Recipient & Donor baseline + derived values
+# Slice 02 — SUBAY: Recipient & Donor baseline + derived values
 
 **Type:** AFK
 **Deep module:** none (derived-variable contracts; candidate for the "derived-variable" test suite)

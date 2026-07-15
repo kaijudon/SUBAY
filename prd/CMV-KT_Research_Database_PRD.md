@@ -1,12 +1,12 @@
-# PRD — RENOVA: CMV/Kidney-Transplant Research Database
+# PRD — SUBAY: CMV/Kidney-Transplant Research Database
 
-**Name:** **RENOVA** — **REN**al transplant **O**bservational **V**iral **A**rchive. Human-facing display name "RENOVA"; Django project/package `renova`.
+**Name:** **SUBAY** — **REN**al transplant **O**bservational **V**iral **A**rchive. Human-facing display name "SUBAY"; Django project/package `subay`.
 
 **Project:** Host Clinical Status and Characterization of CMV in Kidney Transplant Patients in Region XI (Bad-ang et al., SPMC). DOST-PCHRD code 2023-08-A2-PCHRD-CORE-TB-16258. Implementing agency SPMC; cooperating DDH, PSN-Mindanao, SPAIRI, UP Mindanao Philippine Genome Center (PGC).
 
 **Source of truth:** `cmv_grilling_session.md` — the resolved-decisions record from the `/grill-me` Socratic interrogation of the protocol, SAP, and database design. This PRD synthesizes that session into a product requirement. It is consistent with, and supersedes in breadth, the earlier `CMV-KT_Database_Design_Spec.md` (which captured only the Topic #7 schema branch). Where any wording here disagrees with a locked decision in the session, **the session's resolved decision wins.**
 
-**Architecture boundary (load-bearing, locked in session Q17 + Q39–Q42):** Django is the **system-of-record, the derived-variable engine, and the single de-identification chokepoint.** It is **not** a pipeline orchestrator and **not** a statistics engine. The heavy statistical analysis (mixed-effects models, Kaplan-Meier, Wilson CIs, Mann-Whitney, genotype-concordance inference) runs in **R against the frozen, de-identified export**. RENOVA's job is to capture data, enforce the rules, *derive* the analysis-ready variables (episode boundaries, period factor, completion status, derived volumes/ratios/eGFR/age, source-attribution labels), and ship a clean snapshot. Every "analytics" requirement below is a *derived-variable contract feeding the export*, not an in-app model fit.
+**Architecture boundary (load-bearing, locked in session Q17 + Q39–Q42):** Django is the **system-of-record, the derived-variable engine, and the single de-identification chokepoint.** It is **not** a pipeline orchestrator and **not** a statistics engine. The heavy statistical analysis (mixed-effects models, Kaplan-Meier, Wilson CIs, Mann-Whitney, genotype-concordance inference) runs in **R against the frozen, de-identified export**. SUBAY's job is to capture data, enforce the rules, *derive* the analysis-ready variables (episode boundaries, period factor, completion status, derived volumes/ratios/eGFR/age, source-attribution labels), and ship a clean snapshot. Every "analytics" requirement below is a *derived-variable contract feeding the export*, not an in-app model fit.
 
 **Stack (locked, session O8 + Topic #7-D):** Django + PostgreSQL + django-simple-history + django-otp (TOTP 2FA on all roles) + customized Django admin as the data-entry interface. Files on a LUKS-encrypted volume via `FileField` (not DB blobs). Sensitive columns via pgcrypto. nginx/gunicorn HTTPS over a Unix socket, localhost-only. Self-hosted on an SPMC-sited workstation; centralized SPMC data entry; **zero DDH user accounts**.
 
@@ -22,7 +22,7 @@ Without a purpose-built system the Data Manager faces: identifier leakage into t
 
 ## Solution
 
-**RENOVA** — a self-hosted Django webapp that is the **single system-of-record** for the study, built on five recurring design principles (session §"Design principles"): **derive, don't store**; **event-source append-only changes**; **provenance is first-class data**; **human judgment is a field, not an inference**; and **wide-vs-long by variability, with a confounder override**.
+**SUBAY** — a self-hosted Django webapp that is the **single system-of-record** for the study, built on five recurring design principles (session §"Design principles"): **derive, don't store**; **event-source append-only changes**; **provenance is first-class data**; **human judgment is a field, not an inference**; and **wide-vs-long by variability, with a confounder override**.
 
 From the user's perspective it provides:
 
@@ -171,7 +171,7 @@ From the user's perspective it provides:
 
 ## Implementation Decisions
 
-**Modules to be built** (green-field; the existing `RENOVA/` skeleton + slices 0–4 are the in-progress reference):
+**Modules to be built** (green-field; the existing `SUBAY/` skeleton + slices 0–4 are the in-progress reference):
 
 - **Subjects** — abstract `BaseSubject` (no table; `subject_id` / `date_of_birth` / `sex` copied into children at migration); concrete `Recipient(BaseSubject)` (rich, longitudinal) and `Donor(BaseSubject)` (thin, one draw); `OtherCondition` long companion. DOB stored, age / risk_stratum / pre-KT serostatus derived. Confounders wide (three-state nullable booleans), `dialysis_vintage_months`, `induction_agent`. Interface: the Django model layer; data entry via customized admin.
 - **Visits, scheduling & closure-shift** — `RecipientVisit` spine storing `nominal_day`, `actual_visit_date`, `timepoint_label`, `closure_shifted` + `closure_reason` (annexed_holiday / emergency_closure / none) + stretch reference, derived `shift_days_from_nominal`; model validator rejecting shift > +3 days and forcing `completion_status = missed_visit`; minimal `DonorVisit` (`donor` + `draw_date`). Deep enough to test (window/cap logic is load-bearing for the time axis).
@@ -219,7 +219,7 @@ From the user's perspective it provides:
 - **Visit scheduling & closure-shift** — a visit at +3 days saves as closure-shifted; at +4 days is rejected and forced to `missed_visit`; a multi-day closure stretch produces a single forward shift to the first clinic+lab-operating day; `shift_days_from_nominal` derived correctly. The +3 cap and forward-shift logic are load-bearing for the KM time axis, so they warrant the same test rigor.
 - **Derived-variable contracts** — the four-level period factor from timepoint + 2-month cutoff; risk_stratum and pre-KT serostatus from the Snibe Maglumi binary; eGFR from creatinine via CKD-EPI 2021 race-free; source-attribution flat priority (donor-derived > primary > reactivation). These feed the SAP and a silent error changes a published number.
 
-**Prior art:** the existing `RENOVA/` repo (parent project) carries slice issues 00–04 and a `pytest.ini`; establish/extend its conventions — Django `TestCase`/`pytest-django` with `transaction=True` where the all-or-nothing ingest transaction is under test; management-command tests via `call_command` writing to a `tmp_path`; the pure episode-derivation function tested without the ORM. These suites are the prior art for later modules.
+**Prior art:** the existing `SUBAY/` repo (parent project) carries slice issues 00–04 and a `pytest.ini`; establish/extend its conventions — Django `TestCase`/`pytest-django` with `transaction=True` where the all-or-nothing ingest transaction is under test; management-command tests via `call_command` writing to a `tmp_path`; the pure episode-derivation function tested without the ORM. These suites are the prior art for later modules.
 
 ## Out of Scope
 
@@ -234,9 +234,9 @@ From the user's perspective it provides:
 
 ## Further Notes
 
-- This PRD is sourced from `cmv_grilling_session.md` (the full grilling record) and is the **broader** companion to `CMV-KT_Database_Design_Spec.md` (Topic #7 schema only) and the prior `RENOVA/CMV-KT_Research_Database_PRD.md` (webapp from the spec). It adds, as first-class requirements, the SAP-driven derived-variable contracts, the visit-window/closure machinery (Q5), source attribution + resistance surveillance (Obj 5), and the safety release-timeliness flag (Q16.3). The heavy design work is already done; the rationale in the session tells you which constraints are load-bearing (de-id chokepoint, event-sourced ledger, reviewer locks, single-LoD episode rules, +3-day cap, derive-don't-store) versus convenience.
+- This PRD is sourced from `cmv_grilling_session.md` (the full grilling record) and is the **broader** companion to `CMV-KT_Database_Design_Spec.md` (Topic #7 schema only) and the prior `SUBAY/CMV-KT_Research_Database_PRD.md` (webapp from the spec). It adds, as first-class requirements, the SAP-driven derived-variable contracts, the visit-window/closure machinery (Q5), source attribution + resistance surveillance (Obj 5), and the safety release-timeliness flag (Q16.3). The heavy design work is already done; the rationale in the session tells you which constraints are load-bearing (de-id chokepoint, event-sourced ledger, reviewer locks, single-LoD episode rules, +3-day cap, derive-don't-store) versus convenience.
 - The four deep modules chosen for tests (episode derivation, biobank ledger, export/de-id, genotyping ingest) are exactly the ones where a silent error changes a published result or leaks PHI — hence test-first. The two recommended additions (visit/closure logic, derived-variable contracts) are flagged for confirmation rather than assumed, per the to-prd "check which modules to test" step; default is to write all six.
 - Nomenclature: use **Project Leader** / **Co-Project Leader** (DOST-PCHRD convention), never PI / Co-PI, in any user-facing copy.
-- Name **RENOVA** (RENal transplant Observational Viral Archive); Django package `renova`; the login page header reads "RENOVA". Use it consistently across PRD, issues, IRB/DPO registration, and `INSTALLED_APPS`.
-- Saved at `renova_final/prd/CMV-KT_Research_Database_PRD.md`. No GitHub issue filed — `renova_final` is not a git repo. To file later: `git init` here, add a GitHub remote, then `gh issue create --body-file prd/CMV-KT_Research_Database_PRD.md`.
-- Natural next step: `/to-issues` to slice this into independently-grabbable tracer-bullet tickets (the deep modules each make a clean vertical slice; the existing `RENOVA/issues/` 00–04 set is the template to extend with visit-scheduling and source-attribution slices).
+- Name **SUBAY** (RENal transplant Observational Viral Archive); Django package `subay`; the login page header reads "SUBAY". Use it consistently across PRD, issues, IRB/DPO registration, and `INSTALLED_APPS`.
+- Saved at `subay_final/prd/CMV-KT_Research_Database_PRD.md`. No GitHub issue filed — `subay_final` is not a git repo. To file later: `git init` here, add a GitHub remote, then `gh issue create --body-file prd/CMV-KT_Research_Database_PRD.md`.
+- Natural next step: `/to-issues` to slice this into independently-grabbable tracer-bullet tickets (the deep modules each make a clean vertical slice; the existing `SUBAY/issues/` 00–04 set is the template to extend with visit-scheduling and source-attribution slices).

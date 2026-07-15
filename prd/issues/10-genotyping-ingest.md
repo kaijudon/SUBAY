@@ -1,4 +1,4 @@
-# Slice 10 — RENOVA: Genotyping ingest
+# Slice 10 — SUBAY: Genotyping ingest
 
 **Type:** AFK
 **Deep module:** Genotyping ingest (test target)
