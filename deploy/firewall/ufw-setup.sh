@@ -6,7 +6,7 @@
 # Locks the box to a single-operator localhost posture: no inbound anything except
 # SSH from the admin subnet, and even that only for maintenance. The app itself is
 # NEVER exposed — nginx/gunicorn bind 127.0.0.1 (Slice 0), so no firewall rule is
-# needed to reach RENOVA; you use it from the box's own browser.
+# needed to reach SUBAY; you use it from the box's own browser.
 #
 # Acceptance (issue 15): "SSH is key-only (password + root login disabled),
 # LAN-bound, with fail2ban and UFW allowing inbound 22 from the admin subnet only."
@@ -17,8 +17,8 @@
 set -euo pipefail
 
 # ---- operator settings ------------------------------------------------------
-ADMIN_SUBNET="192.168.1.0/24"   # <-- EDIT to your admin LAN, or leave and set SSH_ENABLED=0
-SSH_ENABLED=1                   # 1 = allow SSH from ADMIN_SUBNET; 0 = no inbound SSH at all
+ADMIN_SUBNET="192.168.1.0/24"   # unused when SSH_ENABLED=0 (this box has no sshd)
+SSH_ENABLED=0                   # 0 = no inbound SSH at all (single operator sits at the box)
 # -----------------------------------------------------------------------------
 
 if [[ $EUID -ne 0 ]]; then
@@ -46,7 +46,7 @@ ufw status verbose
 cat <<'NEXT'
 
 ==> UFW is up. Now harden SSH itself (only if you use SSH):
-    sudo cp deploy/firewall/sshd-hardening.conf /etc/ssh/sshd_config.d/10-renova.conf
+    sudo cp deploy/firewall/sshd-hardening.conf /etc/ssh/sshd_config.d/10-subay.conf
     # make sure your public key is in ~/.ssh/authorized_keys FIRST, or you lock yourself out
     sudo sshd -t && sudo systemctl restart ssh
 

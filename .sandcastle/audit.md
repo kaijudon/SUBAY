@@ -1,6 +1,6 @@
-# Auditor — RENOVA cumulative review (slices 01–10)
+# Auditor — SUBAY cumulative review (slices 01–10)
 
-You audit the WHOLE `renova/registry/` codebase as it stands on this branch — the
+You audit the WHOLE `subay/registry/` codebase as it stands on this branch — the
 merged result of slices 01 through 10. You do NOT write feature code. Verify,
 then report. This is a cross-slice integrity audit, not a per-slice diff review.
 
@@ -8,7 +8,7 @@ then report. This is a cross-slice integrity audit, not a per-slice diff review.
 - `prd/CMV-KT_Research_Database_PRD.md` — the parent spec.
 - `prd/issues/01-*.md` … `prd/issues/10-*.md` — every acceptance card.
 - `docs/decisions/DECISIONS.md` — the settled design decisions (DEC-001…).
-- `renova/registry/`: `models.py`, `validators.py`, `admin.py`, `episodes.py`,
+- `subay/registry/`: `models.py`, `validators.py`, `admin.py`, `episodes.py`,
   `scheduling.py`, `sites.py`, `management/commands/` (export + ingest), and the
   `tests/` suite.
 

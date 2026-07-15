@@ -1,11 +1,11 @@
 -- deploy/sql/01-pgcrypto.sql — Slice 15 §1: pgcrypto as defense-in-depth
 -- =============================================================================
--- Run once, as the postgres superuser, against the renova database:
---     sudo -u postgres psql -d renova -f deploy/sql/01-pgcrypto.sql
+-- Run once, as the postgres superuser, against the subay database:
+--     sudo -u postgres psql -d subay -f deploy/sql/01-pgcrypto.sql
 --
 -- WHAT THIS DOES AND WHY (read before running)
 -- --------------------------------------------------------------------------
--- The re-identifying data RENOVA stores is NOT names/MRNs/addresses — the model
+-- The re-identifying data SUBAY stores is NOT names/MRNs/addresses — the model
 -- forbids those (Recipient.subject_id: "Never a name/MRN/address"). The identity
 -- risk is the CALENDAR-DATE ANCHOR: Recipient.date_of_birth and Recipient.kt_date
 -- (transplant = day 0). With kt_date, every de-identified day-offset in an export
@@ -55,5 +55,5 @@ END
 $$;
 
 -- Verify: the extension is present.
---     sudo -u postgres psql -d renova -c "\dx pgcrypto"
+--     sudo -u postgres psql -d subay -c "\dx pgcrypto"
 -- expect one row naming the pgcrypto extension.

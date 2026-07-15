@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# RENOVA — tamper-evident history export (Slice 15, AC7).
+# SUBAY — tamper-evident history export (Slice 15, AC7).
 # Run weekly from a timer. Dumps django-simple-history tables to a hash-stamped,
 # append-only file pushed to immutable off-site storage (Drive 2 / object-lock bucket).
 #
@@ -8,8 +8,8 @@
 # detectable: a changed past = a hash that no longer matches the prior export.
 set -euo pipefail
 
-: "${DATABASE_URL:?set via /etc/renova/renova.env}"
-OUT_DIR="${HISTORY_OUT_DIR:-/var/backups/renova/history}"
+: "${DATABASE_URL:?set via /etc/subay/subay.env}"
+OUT_DIR="${HISTORY_OUT_DIR:-/var/backups/subay/history}"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 install -d -m 700 "$OUT_DIR"
 OUT="${OUT_DIR}/history_${STAMP}.sql.gz"

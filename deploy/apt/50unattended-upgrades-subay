@@ -1,0 +1,29 @@
+// deploy/apt/50unattended-upgrades-subay — Slice 15 §4
+// Install: sudo cp deploy/apt/50unattended-upgrades-subay /etc/apt/apt.conf.d/
+//          sudo cp deploy/apt/20auto-upgrades /etc/apt/apt.conf.d/
+//          sudo apt install -y unattended-upgrades
+//
+// Security updates auto-INSTALL, but the box NEVER auto-reboots. Acceptance
+// (issue 15): "reboots are operator-gated ... never auto-reboot a LUKS box into a
+// hung passphrase prompt." An unattended reboot would stop at the LUKS console
+// prompt with nobody there to type the passphrase — the app would be down until a
+// human walks to the machine. So reboots are a deliberate manual step (RUNBOOK §4).
+
+Unattended-Upgrade::Allowed-Origins {
+    "${distro_id}:${distro_codename}-security";
+    "${distro_id}ESMApps:${distro_codename}-apps-security";
+    "${distro_id}ESM:${distro_codename}-infra-security";
+};
+
+// Do the security patches automatically...
+Unattended-Upgrade::AutoFixInterruptedDpkg "true";
+Unattended-Upgrade::MinimalSteps "true";
+
+// ...but NEVER reboot on our own. The operator reboots at the console when they
+// can be present to enter the LUKS passphrase (see RUNBOOK §4).
+Unattended-Upgrade::Automatic-Reboot "false";
+
+// Keep a local log; write a stamp file when a reboot becomes REQUIRED so the
+// operator (and the healthcheck) can see "patched, awaiting your reboot".
+Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+Unattended-Upgrade::Remove-Unused-Dependencies "true";

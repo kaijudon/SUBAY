@@ -1,0 +1,10 @@
+# SUBAY — weekly history export schedule (Slice 15, AC7). enable --now this timer.
+[Unit]
+Description=SUBAY weekly history export (Sundays 02:30)
+
+[Timer]
+OnCalendar=Sun *-*-* 02:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
