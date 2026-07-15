@@ -1,0 +1,10 @@
+# deploy/systemd/subay-healthcheck.timer — Slice 15 §6: run monitoring every 15 min.
+[Unit]
+Description=SUBAY healthcheck every 15 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+
+[Install]
+WantedBy=timers.target

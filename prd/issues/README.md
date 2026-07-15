@@ -1,10 +1,10 @@
-# RENOVA — Tracer-bullet slices (kanban board)
+# SUBAY — Tracer-bullet slices (kanban board)
 
-**RENOVA** = **REN**al transplant **O**bservational **V**iral **A**rchive. Django package `renova`.
+**SUBAY** = **REN**al transplant **O**bservational **V**iral **A**rchive. Django package `subay`.
 
-Sliced from `prd/CMV-KT_Research_Database_PRD.md`. Each `NN-*.md` file is one independently-grabbable **vertical slice** — a thin path through every layer (schema → admin entry → model validation → test → de-identified export), demoable on its own. This is the broader-scope board (full PRD); it extends the parent repo's `RENOVA/issues/` 00–04 set.
+Sliced from `prd/CMV-KT_Research_Database_PRD.md`. Each `NN-*.md` file is one independently-grabbable **vertical slice** — a thin path through every layer (schema → admin entry → model validation → test → de-identified export), demoable on its own. This is the broader-scope board (full PRD); it extends the parent repo's `SUBAY/issues/` 00–04 set.
 
-Not yet GitHub issues — `renova_final` is not a git repo. To convert: `git init` at project root, add a GitHub remote, then for each file `gh issue create --title "<slice>" --body-file prd/issues/<file>`.
+Not yet GitHub issues — `subay_final` is not a git repo. To convert: `git init` at project root, add a GitHub remote, then for each file `gh issue create --title "<slice>" --body-file prd/issues/<file>`.
 
 ## Board
 

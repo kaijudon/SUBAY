@@ -1,4 +1,4 @@
-# Reviewer — RENOVA Slice {{SLICE}}
+# Reviewer — SUBAY Slice {{SLICE}}
 
 Review the Builder's work against the issue card `prd/issues/{{SLICE}}-*.md` and
 the plan `docs/plans/Slice{{SLICE}}-plan.md`. Do NOT write feature code — verify only.

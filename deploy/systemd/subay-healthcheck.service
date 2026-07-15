@@ -1,0 +1,20 @@
+# deploy/systemd/subay-healthcheck.service — Slice 15 §6: monitoring unit
+# Install: sudo cp deploy/systemd/subay-healthcheck.{service,timer} /etc/systemd/system/
+#          sudo systemctl enable --now subay-healthcheck.timer
+[Unit]
+Description=SUBAY push-on-failure healthcheck
+
+[Service]
+Type=oneshot
+User=root
+# Load SUBAY_ALERT_WEBHOOK (the push URL) from the root-owned 0600 secrets file —
+# notify-operator.sh reads it from the environment. Keeps the URL out of this unit.
+EnvironmentFile=/etc/subay/subay.env
+# Edit these to your real alert channel + dead-man's-switch endpoint. No PHI is
+# ever sent; the script emits only metric names, counts, and the host name.
+# Probe /admin/ (SUBAY has no root route; bare / returns 404). /admin/ -> 302
+# to the OTP login = "app alive", and fetches no data so no PHI is captured.
+Environment=SUBAY_APP_URL=https://127.0.0.1/admin/
+Environment=SUBAY_ALERT_CMD=
+Environment=SUBAY_HEARTBEAT_URL=
+ExecStart=/opt/subay/deploy/bin/healthcheck.sh

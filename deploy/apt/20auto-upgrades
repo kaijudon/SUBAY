@@ -1,5 +1,5 @@
 // deploy/apt/20auto-upgrades — Slice 15 §4: enable the periodic unattended run.
-// Install as /etc/apt/apt.conf.d/20auto-upgrades (pairs with 50unattended-upgrades-renova).
+// Install as /etc/apt/apt.conf.d/20auto-upgrades (pairs with 50unattended-upgrades-subay).
 
 APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";

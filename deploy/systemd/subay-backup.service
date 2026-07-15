@@ -1,0 +1,27 @@
+# deploy/systemd/subay-backup.service — Slice 15 §5: nightly backup unit
+# Install: sudo cp deploy/systemd/subay-backup.{service,timer} /etc/systemd/system/
+#          sudo systemctl enable --now subay-backup.timer
+[Unit]
+Description=SUBAY three-part encrypted backup
+After=postgresql.service
+Requires=postgresql.service
+# Refuse to run unless the off-machine backup drive is actually mounted here —
+# otherwise a run with the drive unplugged would write to the local LUKS disk.
+RequiresMountsFor=/mnt/subay-backup
+
+[Service]
+Type=oneshot
+User=root
+# Secrets (DATABASE_URL etc.) come from the same root-owned 0600 env file as the app.
+EnvironmentFile=/etc/subay/subay.env
+# Off-machine target and the PUBLIC key to encrypt to (asymmetric: the box holds
+# only the public half; the private key is escrowed off-box — RUNBOOK §8). Edit to
+# your mount + recipient. SUBAY_BACKUP_GNUPGHOME may point at a dedicated keyring.
+Environment=SUBAY_BACKUP_DEST=/mnt/subay-backup/subay-backups
+Environment=SUBAY_BACKUP_GPG_RECIPIENT=cmvbiobank888@gmail.com
+Environment=MEDIA_ROOT=/opt/subay/media
+ExecStart=/opt/subay/deploy/bin/backup.sh
+# Hardening: the backup needs to read the DB and MEDIA_ROOT and write the targets.
+ProtectSystem=strict
+ReadWritePaths=/mnt/subay-backup /var/lib/subay /var/backups/subay
+PrivateTmp=true

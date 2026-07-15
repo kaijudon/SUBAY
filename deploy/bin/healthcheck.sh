@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # deploy/bin/healthcheck.sh — Slice 15 §6: push-on-failure monitoring
 # =============================================================================
-# Run every ~15 min via systemd timer (deploy/systemd/renova-healthcheck.timer).
+# Run every ~15 min via systemd timer (deploy/systemd/subay-healthcheck.timer).
 #
 # Acceptance (issue 15): "Push-on-failure monitoring covers last-backup age,
 # disk %, app health, and SSH anomalies, has a dead-man's switch, and carries no
@@ -9,8 +9,8 @@
 #
 # Two channels:
 #   * ALERT (push on failure): only fires when something is WRONG. Sends a terse,
-#     PHI-FREE message via the operator-supplied RENOVA_ALERT_CMD.
-#   * HEARTBEAT (dead-man's switch): pings RENOVA_HEARTBEAT_URL on every SUCCESS.
+#     PHI-FREE message via the operator-supplied SUBAY_ALERT_CMD.
+#   * HEARTBEAT (dead-man's switch): pings SUBAY_HEARTBEAT_URL on every SUCCESS.
 #     If the box dies entirely, the pings stop and the external heartbeat service
 #     (e.g. healthchecks.io) alarms — catching the failure a push-only design can't.
 #
@@ -20,17 +20,17 @@
 set -uo pipefail   # NOT -e: a single failed check must still let the others run
 
 # ---- operator settings (override via the systemd unit's Environment=) --------
-APP_URL="${RENOVA_APP_URL:-https://127.0.0.1/}"
-STAMPFILE="${RENOVA_BACKUP_STAMP:-/var/lib/renova/last-backup.stamp}"
-MAX_BACKUP_AGE_H="${RENOVA_MAX_BACKUP_AGE_H:-26}"     # nightly + slack
-DISK_PATHS="${RENOVA_DISK_PATHS:-/ /var}"
-DISK_WARN_PCT="${RENOVA_DISK_WARN_PCT:-85}"
-ALERT_CMD="${RENOVA_ALERT_CMD:-}"                     # e.g. 'mail -s RENOVA op@example' or a curl
+APP_URL="${SUBAY_APP_URL:-https://127.0.0.1/}"
+STAMPFILE="${SUBAY_BACKUP_STAMP:-/var/lib/subay/last-backup.stamp}"
+MAX_BACKUP_AGE_H="${SUBAY_MAX_BACKUP_AGE_H:-26}"     # nightly + slack
+DISK_PATHS="${SUBAY_DISK_PATHS:-/ /var}"
+DISK_WARN_PCT="${SUBAY_DISK_WARN_PCT:-85}"
+ALERT_CMD="${SUBAY_ALERT_CMD:-}"                     # e.g. 'mail -s SUBAY op@example' or a curl
 # Single PHI-free push chokepoint (deploy/bin/notify-operator.sh). Preferred over
 # ALERT_CMD so every operator alert — monitoring, reboot-required — arrives the same
 # way through one place that must stay PHI-free.
-NOTIFY="${RENOVA_NOTIFY:-/opt/renova/deploy/bin/notify-operator.sh}"
-HEARTBEAT_URL="${RENOVA_HEARTBEAT_URL:-}"            # dead-man's switch ping target
+NOTIFY="${SUBAY_NOTIFY:-/opt/subay/deploy/bin/notify-operator.sh}"
+HEARTBEAT_URL="${SUBAY_HEARTBEAT_URL:-}"            # dead-man's switch ping target
 # -----------------------------------------------------------------------------
 
 HOST="$(hostname -s)"
@@ -69,7 +69,7 @@ fi
 # ---- dispatch ---------------------------------------------------------------
 if (( ${#PROBLEMS[@]} > 0 )); then
     SUMMARY="$(printf '%s; ' "${PROBLEMS[@]}")"
-    MSG="RENOVA[${HOST}] ALERT: ${SUMMARY}"
+    MSG="SUBAY[${HOST}] ALERT: ${SUMMARY}"
     echo "$MSG" >&2
     # Prefer the single notify chokepoint; fall back to a raw ALERT_CMD if set.
     if [[ -x "$NOTIFY" ]]; then
@@ -83,4 +83,4 @@ fi
 # All green: fire the dead-man's-switch heartbeat so an external monitor knows the
 # box is alive. Silence here (box dead) is what makes that monitor alarm.
 [[ -n "$HEARTBEAT_URL" ]] && curl -fsS --max-time 10 "$HEARTBEAT_URL" >/dev/null 2>&1 || true
-echo "RENOVA[${HOST}] healthy"
+echo "SUBAY[${HOST}] healthy"

@@ -2,7 +2,7 @@
 # deploy/bin/restore-drill.sh — Slice 15 §5: quarterly restore + pgcrypto verify
 # =============================================================================
 # Run quarterly (calendar reminder in RUNBOOK §5), by hand:
-#     sudo deploy/bin/restore-drill.sh /mnt/backup/renova/db-<TS>.dump.gpg
+#     sudo deploy/bin/restore-drill.sh /mnt/backup/subay/db-<TS>.dump.gpg
 #
 # A backup you have never restored is not a backup. This proves, end to end, that:
 #   1. the encrypted Postgres dump DECRYPTS with the escrowed key,
@@ -19,10 +19,10 @@ CIPHERTEXT="${1:-}"
 # imported into this keyring on the drill/recovery machine — never on the live box.
 # Point GNUPGHOME at that keyring; if the private key is passphrase-protected, give
 # its passphrase file. The live box (backup.sh) holds only the public half.
-GNUPGHOME="${RENOVA_BACKUP_GNUPGHOME:-}"
-GPG_PASSPHRASE_FILE="${RENOVA_BACKUP_GPG_PASSPHRASE_FILE:-}"
-DRILL_DB="renova_restore_drill_$(date -u +%Y%m%dT%H%M%SZ)"
-PG_SUPERUSER="${RENOVA_PG_SUPERUSER:-postgres}"   # OS user for peer-auth admin ops
+GNUPGHOME="${SUBAY_BACKUP_GNUPGHOME:-}"
+GPG_PASSPHRASE_FILE="${SUBAY_BACKUP_GPG_PASSPHRASE_FILE:-}"
+DRILL_DB="subay_restore_drill_$(date -u +%Y%m%dT%H%M%SZ)"
+PG_SUPERUSER="${SUBAY_PG_SUPERUSER:-postgres}"   # OS user for peer-auth admin ops
 
 # The DB admin ops (createdb/pg_restore/psql/dropdb) need superuser access. This
 # script runs as root (sudo), and root peer-auths as OS user "root", which has no

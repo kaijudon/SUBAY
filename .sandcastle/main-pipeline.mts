@@ -33,8 +33,8 @@ const CHANGES = "<promise>CHANGES</promise>";
 const box = await createSandbox({
   branch,
   // Docker's containerd image store only resolves fully-qualified refs; the bare
-  // name `sandcastle:renova_final` fails `docker image inspect`, so pin the full ref.
-  sandbox: docker({ imageName: "docker.io/library/sandcastle:renova_final" }),
+  // name `sandcastle:subay_final` fails `docker image inspect`, so pin the full ref.
+  sandbox: docker({ imageName: "docker.io/library/sandcastle:subay_final" }),
   hooks: {
     sandbox: {
       onSandboxReady: [

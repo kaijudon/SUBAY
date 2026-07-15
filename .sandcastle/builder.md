@@ -1,4 +1,4 @@
-# Builder — RENOVA Slice {{SLICE}}
+# Builder — SUBAY Slice {{SLICE}}
 
 You implement the slice by following the plan in
 `docs/plans/Slice{{SLICE}}-plan.md`. The issue card is `prd/issues/{{SLICE}}-*.md`.
@@ -10,14 +10,14 @@ read it FIRST and address every numbered item this round.
 Read `docs/decisions/DECISIONS.md` for prior-slice design rationale; do not
 contradict a settled decision there.
 
-Repo conventions (study `renova/registry/` before writing):
+Repo conventions (study `subay/registry/` before writing):
 - Validation lives ON THE MODELS (clean()/constraints), not the admin.
 - Subject IDs are STRINGS (`[S|D]CMV[R|D][NN]`); never coerce to int.
 - Dates exported only as integer day-offsets from kt_date (transplant = day 0).
 - django-simple-history on new outcome models; admin shows children as inlines.
 
 Work test-first (red → green):
-1. Write/extend tests under `renova/registry/tests/` per the plan, including the
+1. Write/extend tests under `subay/registry/tests/` per the plan, including the
    de-id leak-check assertion.
 2. Run `python -m pytest -q` — confirm the new tests FAIL.
 3. Implement models, migrations, admin, extend `export_analysis_set` until tests pass.

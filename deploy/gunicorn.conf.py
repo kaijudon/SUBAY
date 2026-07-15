@@ -1,9 +1,9 @@
-# Gunicorn config for RENOVA.
+# Gunicorn config for SUBAY.
 # Binds a Unix socket ONLY — never a TCP port. nginx terminates HTTPS and proxies
 # to this socket, so the app is unreachable except via nginx on localhost.
-bind = "unix:/run/renova/gunicorn.sock"
-# Socket mode 0770 (renova:renova) so nginx can connect ONLY if www-data is added to
-# the renova group (see deploy/README.md standup) — not world-accessible.
+bind = "unix:/run/subay/gunicorn.sock"
+# Socket mode 0770 (subay:subay) so nginx can connect ONLY if www-data is added to
+# the subay group (see deploy/README.md standup) — not world-accessible.
 umask = 0o007
 workers = 3
 timeout = 60

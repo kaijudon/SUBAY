@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # deploy/bin/backup.sh — Slice 15 §5: three-part, encrypted, off-machine backup
 # =============================================================================
-# Run nightly via systemd timer (deploy/systemd/renova-backup.timer), or by hand:
+# Run nightly via systemd timer (deploy/systemd/subay-backup.timer), or by hand:
 #     sudo deploy/bin/backup.sh
 #
 # Acceptance (issue 15): "three-part backup (Postgres + encrypted MEDIA_ROOT +
@@ -11,7 +11,7 @@
 # The three parts, all encrypted at rest so they are safe OFF the LUKS box:
 #   1. Postgres dump  (pg_dump custom format)
 #   2. MEDIA_ROOT     (genotyping raw files, content-addressed) as a tar
-#   3. Secrets        (/etc/renova/renova.env, incl. keys) as a tar
+#   3. Secrets        (/etc/subay/subay.env, incl. keys) as a tar
 #
 # Encryption: ASYMMETRIC (public-key) gpg to a named recipient. The box holds ONLY
 # the recipient's PUBLIC key, so it can write backups but can NEVER decrypt them —
@@ -19,20 +19,20 @@
 # key that decrypts is escrowed OFF the box (sealed custody, RUNBOOK §8) and is only
 # imported on the drill/recovery machine (deploy/bin/restore-drill.sh). This is a
 # stronger custody boundary than a symmetric passphrase the box must keep on hand.
-# Set RENOVA_BACKUP_GPG_RECIPIENT to the key id / fingerprint / uid to encrypt to.
+# Set SUBAY_BACKUP_GPG_RECIPIENT to the key id / fingerprint / uid to encrypt to.
 #
 # NO PHI is ever written to logs — only file names, sizes, and success/fail.
 # =============================================================================
 set -euo pipefail
 
 # ---- operator settings (override via the systemd unit's Environment=) --------
-BACKUP_DEST="${RENOVA_BACKUP_DEST:-/mnt/backup/renova}"        # off-machine target (Drive 1)
-GPG_RECIPIENT="${RENOVA_BACKUP_GPG_RECIPIENT:-}"               # public key id/fpr/uid to encrypt to
-GNUPGHOME="${RENOVA_BACKUP_GNUPGHOME:-}"                       # optional: dedicated keyring holding only the public key
-MEDIA_ROOT="${MEDIA_ROOT:-/opt/renova/media}"
-ENV_FILE="${RENOVA_ENV_FILE:-/etc/renova/renova.env}"
-RETAIN_DAYS="${RENOVA_BACKUP_RETAIN_DAYS:-30}"
-STAMPFILE="${RENOVA_BACKUP_STAMP:-/var/lib/renova/last-backup.stamp}"  # healthcheck reads this
+BACKUP_DEST="${SUBAY_BACKUP_DEST:-/mnt/backup/subay}"        # off-machine target (Drive 1)
+GPG_RECIPIENT="${SUBAY_BACKUP_GPG_RECIPIENT:-}"               # public key id/fpr/uid to encrypt to
+GNUPGHOME="${SUBAY_BACKUP_GNUPGHOME:-}"                       # optional: dedicated keyring holding only the public key
+MEDIA_ROOT="${MEDIA_ROOT:-/opt/subay/media}"
+ENV_FILE="${SUBAY_ENV_FILE:-/etc/subay/subay.env}"
+RETAIN_DAYS="${SUBAY_BACKUP_RETAIN_DAYS:-30}"
+STAMPFILE="${SUBAY_BACKUP_STAMP:-/var/lib/subay/last-backup.stamp}"  # healthcheck reads this
 # -----------------------------------------------------------------------------
 
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -40,7 +40,7 @@ log() { echo "[$(date -u +%H:%M:%SZ)] $*"; }
 fail() { echo "BACKUP FAILED: $*" >&2; exit 1; }
 
 [[ -n "${DATABASE_URL:-}" ]]  || fail "DATABASE_URL not set (load the systemd env file)"
-[[ -n "$GPG_RECIPIENT" ]]     || fail "RENOVA_BACKUP_GPG_RECIPIENT not set (public key to encrypt to)"
+[[ -n "$GPG_RECIPIENT" ]]     || fail "SUBAY_BACKUP_GPG_RECIPIENT not set (public key to encrypt to)"
 # Optional dedicated keyring (holds ONLY the public key — the box can't decrypt).
 [[ -n "$GNUPGHOME" ]] && export GNUPGHOME
 # Fail loudly now if the public key isn't in the keyring, rather than mid-backup.

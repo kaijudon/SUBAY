@@ -1,4 +1,4 @@
-# Slice 05 — RENOVA: Viral-load & serology capture
+# Slice 05 — SUBAY: Viral-load & serology capture
 
 **Type:** AFK
 **Deep module:** none (serology cutoff is a derived-variable contract)
