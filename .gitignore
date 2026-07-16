@@ -32,3 +32,36 @@ hats.yml
 ralph.yml
 
 generate_OTP.py
+
+# --- Non-skeletal scaffolding: keep the public repo to the app skeleton only ---
+# The build/orchestration harness, agent skills, planning specs, teaching notes,
+# and generated artefacts stay local; only the Django app (subay/, templates/,
+# static/, deploy/, manage.py, deps, README) ships.
+.agents/
+.sandcastle/
+.worktrees/
+
+# Agent/process instruction + spec docs (local working material).
+AGENTS.md
+CLAUDE.md
+MISSION.md
+NOTES.md
+skills-lock.json
+*_prompt.md
+Slice[0-9]*.md
+
+# Study specs and reference material (source-of-truth lives outside the code repo).
+prd/
+reference/
+docs/decisions/
+docs/2026-06-11-slice0-walking-skeleton-design.md
+
+# Brand/course assets (masters live outside the code repo).
+Assets/
+assets/
+
+# One-off scripts / orchestration runners (not part of the app).
+scripts/
+
+# collectstatic output — regenerated from static/ + app static dirs, never tracked.
+staticfiles/
