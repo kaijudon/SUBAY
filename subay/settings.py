@@ -1,6 +1,6 @@
 """Django settings for SUBAY — Slice 0 walking skeleton.
 
-RENal transplant Observational Viral Archive. Self-hosted, localhost-only,
+CMV / Kidney-Transplant Research Database. Self-hosted, localhost-only,
 single system-of-record for the CMV / kidney-transplant study.
 """
 from pathlib import Path
