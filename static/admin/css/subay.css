@@ -4,36 +4,39 @@
    follows. */
 
 :root {
-  /* Brand: a clinical teal/slate instead of the default Django green. */
-  --primary: #15616d;
-  --secondary: #15616d;
-  --accent: #ff7d00;
+  /* Brand: a soft teal / mint pastel. Header and section captions are pastel
+     mint with dark-mint text (icons inherit that colour via currentColor); the
+     primary is a softened mint-teal that still clears AA on white; the accent is
+     a soft coral for warning verbs. */
+  --primary: #2b7669;
+  --secondary: #2b7669;
+  --accent: #d97a52;
 
-  --header-bg: #0d3b43;
-  --header-color: #f4fbfb;
-  --header-branding-color: #ffffff;
-  --header-link-color: #d8efef;
+  --header-bg: #cbe9e1;
+  --header-color: #22534a;
+  --header-branding-color: #22534a;
+  --header-link-color: #3d726a;
 
-  --link-fg: #15616d;
-  --link-hover-color: #0d3b43;
-  --link-selected-fg: #0d3b43;
+  --link-fg: #2b7669;
+  --link-hover-color: #1f5a4f;
+  --link-selected-fg: #1f5a4f;
 
-  --button-bg: #15616d;
-  --button-hover-bg: #0d3b43;
-  --default-button-bg: #15616d;
-  --default-button-hover-bg: #0d3b43;
+  --button-bg: #2b7669;
+  --button-hover-bg: #1f5a4f;
+  --default-button-bg: #2b7669;
+  --default-button-hover-bg: #1f5a4f;
 
-  --object-tools-bg: #0d3b43;
-  --object-tools-hover-bg: #15616d;
+  --object-tools-bg: #2b7669;
+  --object-tools-hover-bg: #1f5a4f;
 
   /* Calmer surfaces + roomier rhythm for dense clinical forms. */
-  --body-bg: #f5f7f8;
-  --body-fg: #1f2a2d;
-  --body-quiet-color: #5a6a6e;
-  --hairline-color: #e2e8ea;
-  --border-color: #d7e0e2;
-  --darkened-bg: #eef2f3;
-  --selected-row: #fff6ea;
+  --body-bg: #eef7f4;
+  --body-fg: #26332f;
+  --body-quiet-color: #5f736e;
+  --hairline-color: #dcebe6;
+  --border-color: #cfe3dd;
+  --darkened-bg: #e4f1ed;
+  --selected-row: #fbf1e9;
   --message-success-bg: #e6f4ec;
 }
 
