@@ -107,3 +107,27 @@ body {
 /* Semantic accents so the two action verbs read at a glance. */
 .ico-warning { color: var(--accent); }
 .ico-ok      { color: var(--primary); }
+
+/* Workflow-section icons on the grouped index. Zero template fork: Django wraps
+   each section in `div.app-<slug>` (slug = _section() app_label), so the glyph
+   is injected before the caption link purely in CSS. Same currentColor mask, so
+   it takes the caption's own light-on-teal colour with no extra styling. */
+#content-main .module > table > caption > a.section::before {
+  content: "";
+  display: inline-block;
+  width: 1.05em;
+  height: 1.05em;
+  margin-right: 0.5em;
+  vertical-align: -0.16em;
+  background-color: currentColor;
+  -webkit-mask: center / contain no-repeat;
+  mask: center / contain no-repeat;
+}
+.app-subjects        caption a.section::before { -webkit-mask-image: url("../img/icons/team.svg");        mask-image: url("../img/icons/team.svg"); }
+.app-visit_spine     caption a.section::before { -webkit-mask-image: url("../img/icons/calendar.svg");    mask-image: url("../img/icons/calendar.svg"); }
+.app-labs            caption a.section::before { -webkit-mask-image: url("../img/icons/flask.svg");       mask-image: url("../img/icons/flask.svg"); }
+.app-biobank_ledger  caption a.section::before { -webkit-mask-image: url("../img/icons/database.svg");    mask-image: url("../img/icons/database.svg"); }
+.app-genotyping      caption a.section::before { -webkit-mask-image: url("../img/icons/code.svg");        mask-image: url("../img/icons/code.svg"); }
+.app-safety          caption a.section::before { -webkit-mask-image: url("../img/icons/shield-star.svg"); mask-image: url("../img/icons/shield-star.svg"); }
+.app-review          caption a.section::before { -webkit-mask-image: url("../img/icons/shield-check.svg");mask-image: url("../img/icons/shield-check.svg"); }
+.app-administration  caption a.section::before { -webkit-mask-image: url("../img/icons/settings.svg");    mask-image: url("../img/icons/settings.svg"); }
