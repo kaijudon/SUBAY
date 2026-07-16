@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# RENOVA — operator push channel (Slice 15, AC6). Single chokepoint for ALL alerts
+# SUBAY — operator push channel (Slice 15, AC6). Single chokepoint for ALL alerts
 # (monitoring, reboot-required) so there is one place to configure + one place that
 # must stay PHI-free.
 #
@@ -11,9 +11,9 @@ set -euo pipefail
 
 TAG="${1:?short tag}"; MSG="${2:?message}"
 HOST="$(hostname -s)"
-WEBHOOK_URL="${RENOVA_ALERT_WEBHOOK:-}"   # from /etc/renova/renova.env; push, not poll
+WEBHOOK_URL="${SUBAY_ALERT_WEBHOOK:-}"   # from /etc/subay/subay.env; push, not poll
 
-PAYLOAD="[RENOVA/${HOST}] ${TAG}: ${MSG}"
+PAYLOAD="[SUBAY/${HOST}] ${TAG}: ${MSG}"
 
 if [ -n "$WEBHOOK_URL" ]; then
   # --fail so a delivery failure is itself a non-zero exit the caller/timer can catch.
@@ -22,5 +22,5 @@ if [ -n "$WEBHOOK_URL" ]; then
        -d "$(printf '{"text":%s}' "$(printf '%s' "$PAYLOAD" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read()))')")" \
        "$WEBHOOK_URL" >/dev/null
 else
-  logger -t renova-alert "$PAYLOAD"   # fallback to journald if no webhook configured
+  logger -t subay-alert "$PAYLOAD"   # fallback to journald if no webhook configured
 fi

@@ -1,4 +1,4 @@
-# Slice 01 — RENOVA: Export / de-id chokepoint
+# Slice 01 — SUBAY: Export / de-id chokepoint
 
 **Type:** AFK
 **Deep module:** Export / de-id (test target)

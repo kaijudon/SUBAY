@@ -1,0 +1,74 @@
+/* SUBAY admin reskin — zero-dependency theme via Django admin CSS custom
+   properties. Cosmetic only: no markup forked beyond branding, no JS, no new
+   dependency. Override the documented :root vars and the default admin styling
+   follows. */
+
+:root {
+  /* Brand: a clinical teal/slate instead of the default Django green. */
+  --primary: #15616d;
+  --secondary: #15616d;
+  --accent: #ff7d00;
+
+  --header-bg: #0d3b43;
+  --header-color: #f4fbfb;
+  --header-branding-color: #ffffff;
+  --header-link-color: #d8efef;
+
+  --link-fg: #15616d;
+  --link-hover-color: #0d3b43;
+  --link-selected-fg: #0d3b43;
+
+  --button-bg: #15616d;
+  --button-hover-bg: #0d3b43;
+  --default-button-bg: #15616d;
+  --default-button-hover-bg: #0d3b43;
+
+  --object-tools-bg: #0d3b43;
+  --object-tools-hover-bg: #15616d;
+
+  /* Calmer surfaces + roomier rhythm for dense clinical forms. */
+  --body-bg: #f5f7f8;
+  --body-fg: #1f2a2d;
+  --body-quiet-color: #5a6a6e;
+  --hairline-color: #e2e8ea;
+  --border-color: #d7e0e2;
+  --darkened-bg: #eef2f3;
+  --selected-row: #fff6ea;
+  --message-success-bg: #e6f4ec;
+}
+
+/* System font stack — sharper than the default and zero web-font cost. */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+}
+
+/* Branding: stack the long subtitle under the wordmark. */
+#site-name a { font-weight: 700; letter-spacing: 0.5px; }
+#subay-subtitle {
+  font-size: 11px;
+  color: var(--header-link-color);
+  opacity: 0.85;
+  margin-top: 2px;
+}
+
+/* Softer cards for changelist/module blocks. */
+.module {
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(13, 59, 67, 0.06);
+  overflow: hidden;
+}
+.module caption,
+.inline-group h2 {
+  border-radius: 8px 8px 0 0;
+}
+
+/* Buttons: rounded, less shouty. */
+.button, input[type=submit], input[type=button], .submit-row input, a.button {
+  border-radius: 6px;
+}
+
+/* Result rows: gentler hover for long data-entry sessions. */
+#changelist table tbody tr:hover {
+  background: var(--selected-row);
+}

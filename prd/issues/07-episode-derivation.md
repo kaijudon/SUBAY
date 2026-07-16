@@ -1,4 +1,4 @@
-# Slice 07 — RENOVA: CMV episode derivation
+# Slice 07 — SUBAY: CMV episode derivation
 
 **Type:** AFK
 **Deep module:** Episode derivation (test target)
