@@ -11,4 +11,4 @@ class SubayAdminSite(OTPAdminSite):
 
     site_header = "SUBAY"
     site_title = "SUBAY"
-    index_title = "RENal transplant Observational Viral Archive"
+    index_title = "CMV / Kidney-Transplant Research Database"
