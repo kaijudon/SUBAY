@@ -1,9 +1,10 @@
-# SUBAY — nightly backup schedule (Slice 15, AC5). enable --now this timer.
+# deploy/systemd/subay-backup.timer — Slice 15 §5: run the backup nightly.
 [Unit]
-Description=SUBAY nightly backup at 01:30
+Description=Nightly SUBAY backup
 
 [Timer]
-OnCalendar=*-*-* 01:30:00
+# 02:30 local time; Persistent catches up a missed run after the box was off.
+OnCalendar=*-*-* 02:30:00
 Persistent=true
 
 [Install]
