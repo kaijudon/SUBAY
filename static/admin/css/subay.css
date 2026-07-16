@@ -123,8 +123,12 @@ body {
   margin-right: 0.5em;
   vertical-align: -0.16em;
   background-color: currentColor;
-  -webkit-mask: center / contain no-repeat;
-  mask: center / contain no-repeat;
+  /* Longhands, not the `mask` shorthand: the shorthand would reset mask-image
+     to none at this rule's (ID-bearing) specificity and beat the per-section
+     mask-image rules below, blanking every section icon. */
+  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  -webkit-mask-position: center;  mask-position: center;
+  -webkit-mask-size: contain;     mask-size: contain;
 }
 .app-subjects        caption a.section::before { -webkit-mask-image: url("../img/icons/team.svg");        mask-image: url("../img/icons/team.svg"); }
 .app-visit_spine     caption a.section::before { -webkit-mask-image: url("../img/icons/calendar.svg");    mask-image: url("../img/icons/calendar.svg"); }
