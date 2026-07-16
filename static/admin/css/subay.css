@@ -138,3 +138,19 @@ body {
 .app-safety          caption a.section::before { -webkit-mask-image: url("../img/icons/shield-star.svg"); mask-image: url("../img/icons/shield-star.svg"); }
 .app-review          caption a.section::before { -webkit-mask-image: url("../img/icons/shield-check.svg");mask-image: url("../img/icons/shield-check.svg"); }
 .app-administration  caption a.section::before { -webkit-mask-image: url("../img/icons/settings.svg");    mask-image: url("../img/icons/settings.svg"); }
+
+/* Login page: show the full SUBAY logo lockup inside the (white) login card and
+   drop the header there, so the sign-in screen is a clean centred card. The
+   header keeps the themed text wordmark everywhere else; the poster lockup only
+   reads well at this size, so it lives here. Zero markup fork: the logo rides an
+   ::before on the existing #content-main, keyed off the body.login class the
+   admin already sets. */
+body.login #header { display: none; }
+body.login #content-main::before {
+  content: "";
+  display: block;
+  width: 100%;
+  height: 132px;
+  margin: 4px auto 22px;
+  background: center / contain no-repeat url("../img/subay-logo.png");
+}
