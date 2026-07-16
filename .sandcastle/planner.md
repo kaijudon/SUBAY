@@ -1,6 +1,8 @@
-# Planner — RENOVA Slice {{SLICE}}
+# Planner — SUBAY Slice {{SLICE}}
 
-You PLAN one RENOVA vertical slice. Do NOT write feature or test code.
+You PLAN one SUBAY vertical slice. Do NOT write feature or test code.
+
+{{FABLE_HABITS}}
 
 The slice's issue card is `prd/issues/{{SLICE}}-*.md`. Read it, and read the
 parent spec `prd/CMV-KT_Research_Database_PRD.md`.
@@ -9,9 +11,9 @@ Read `docs/decisions/DECISIONS.md` — the design rationale for prior slices.
 Do NOT contradict a settled decision there; build on it.
 
 First study the existing code so the plan fits reality:
-- `renova/registry/models.py`, `validators.py`, `admin.py`
-- `renova/registry/management/commands/export_analysis_set.py`
-- `renova/registry/tests/` (the prior-art test patterns)
+- `subay/registry/models.py`, `validators.py`, `admin.py`
+- `subay/registry/management/commands/export_analysis_set.py`
+- `subay/registry/tests/` (the prior-art test patterns)
 
 Write a plan to `docs/plans/Slice{{SLICE}}-plan.md` containing:
 1. Every acceptance-criteria checkbox from the card, restated as a verifiable check.

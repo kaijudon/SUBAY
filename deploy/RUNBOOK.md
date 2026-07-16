@@ -1,120 +1,123 @@
-# RENOVA operations runbook (Slice 15)
+# SUBAY — Production Hardening & Operations Runbook (Slice 15)
 
-The human procedures behind `deploy/CHECKLIST.md`. The checklist installs the
-machinery; this runbook is what people *do* — reboots, drills, custody, and the
-sign-off that clears the box for real patient data.
+**Status: HITL. NOT merged AFK.** Standing this up requires the physical SPMC
+workstation, the DPO's RA 10173 posture sign-off, and human custody of keys and
+passphrases. These artifacts are *drafts* — a human executes and signs off each step
+on the real box. Real secrets/keys are NEVER written here; placeholders live in
+`subay.env.example` and are filled only in the root-owned `0600` `/etc/subay/subay.env`.
 
-**Roles**
-- **DPO** — SPMC Data Protection Officer (IHOMPS); owns the RA 10173 posture sign-off.
-- **Data Manager (DM)** — the project bioinformatician; the only person with DB superuser (console) and routine data entry.
-- **Operator** — runs the box day to day (backups, updates, reboots). May be the DM.
-- **Co-DM** — bus-factor custodian; holds sealed credentials off-site; **no routine data-entry account**.
-
----
-
-## §4 — Power, updates, and operator-gated reboots
-
-**Why manual reboots.** This is a LUKS box: on boot it stops at a passphrase prompt
-until a human types it at the console. So it must **never auto-reboot** — an
-unattended reboot would leave RENOVA down at a prompt nobody is standing at.
-Security updates auto-install (they patch without rebooting); the reboot is yours.
-
-**When "reboot required" appears** (after a kernel/security update):
-1. Pick a time you can be physically at the box.
-2. Announce brief downtime to the DM.
-3. `sudo systemctl start renova-backup.service` — take a fresh backup first.
-4. `sudo reboot`.
-5. Enter the LUKS passphrase at the console.
-6. Confirm recovery: `systemctl is-active postgresql renova` → `active`; open `https://127.0.0.1/`.
-
-**Power.** The battery is the UPS. Test quarterly by unplugging; the box must keep
-serving. If Ubuntu warns of a failing battery, treat it as a UPS failure — replace
-before it can drop Postgres mid-write.
-
-**Lid / unattended (security).** The lid-close handler is disabled so the box keeps
-running as a server (`logind-renova.conf`). The counterpart rule: **when you leave
-it unattended, power it fully OFF and lock it in a room.** Suspend/sleep keeps the
-LUKS key in RAM — a sleeping laptop is *not* protected. OFF = protected.
-
-## §5 — Backup custody and the quarterly restore drill
-
-**Three parts, public-key encryption.** `backup.sh` writes three encrypted artifacts
-(DB dump, MEDIA_ROOT, secrets) to the backup target (Drive 1), encrypted with GPG
-**asymmetrically** to `RENOVA_BACKUP_GPG_RECIPIENT`. The box holds only the *public*
-key, so a stolen or compromised running box **cannot decrypt its own backups**. The
-*private* key that decrypts them is escrowed off-box in sealed custody (§8) and only
-imported on the drill/recovery machine. A weekly copy of the `*.gpg` files goes to
-**off-site Drive 2** (§8 custody).
-
-To restore, the drill machine points `RENOVA_BACKUP_GNUPGHOME` at a keyring holding
-the imported private key (and `RENOVA_BACKUP_GPG_PASSPHRASE_FILE` if it is
-passphrase-protected).
-
-**Quarterly restore drill (a backup you have never restored is not a backup):**
-1. `sudo deploy/bin/restore-drill.sh /mnt/backup/renova/db-<latest>.dump.gpg`
-2. Confirm it ends with `RESTORE DRILL PASSED` (decrypt + restore + pgcrypto verified).
-3. Record it in the log below.
-
-| Drill date (UTC) | Backup tested (filename) | Result | Run by |
-|---|---|---|---|
-| _pending first drill_ | | | |
-
-## §7 — Audit integrity
-
-- **Least-privilege DB** — `sql/02-restrict-superuser.sql` keeps the app off
-  superuser so it cannot rewrite the `simple_history` audit trail. Superuser stays
-  with `postgres`, reachable only by the DM at the console.
-- **Trustworthy clock** — `timedatectl set-ntp true`. Audit timestamps are
-  worthless if the clock drifts; NTP keeps them honest.
-- **Immutable history export (quarterly, off-site):** export the append-only
-  history into the backup set so a later DB compromise cannot rewrite the past.
-  ```sh
-  sudo -u postgres pg_dump --format=custom --table='*_history' -d renova \
-      -f /mnt/backup/renova/history-$(date -u +%Y%m%dT%H%M%SZ).dump
-  ```
-  Encrypt it into the off-site Drive 2 set alongside the nightly backups. Log the date here.
-
-| History-export date (UTC) | Sent off-site? | Run by |
-|---|---|---|
-| _pending first export_ | | |
-
-## §8 — Sealed credentials + bus-factor
-
-**What is sealed** (each in its own signed, dated envelope):
-1. The **LUKS disk passphrase** — without it a powered-off box is unrecoverable.
-2. The **backup GPG private key** (exported, e.g. `renova-backup-private.asc`, plus its
-   passphrase) — without it the backups are permanently unrecoverable. The live box
-   never holds this; it is the whole point of the asymmetric scheme.
-
-**Custody:** the Co-DM holds the sealed envelopes **off-site**, on a custody path
-separate from both the box and Drive 1. The Co-DM has **no routine data-entry
-account** — custody is not a login.
-
-**Bus-factor invocation** (the DM/Operator is unavailable and the box or its
-backups must be recovered):
-1. Two people present: the Co-DM and a DPO-authorised witness.
-2. Record who, when, and why (the DPO logs it for the RA 10173 trail).
-3. Open only the envelope needed (disk passphrase to unlock the box; backup key to
-   restore off-site). Do not open both if only one is needed.
-4. After use, **re-seal with fresh material**: rotate the exposed secret (new LUKS
-   passphrase or new backup key), re-seal, re-date, re-sign, return to custody.
-
-**Test it:** at standup, the Co-DM performs a dry-run — locate the envelopes,
-confirm they are sealed and dated, and read this procedure aloud with the DM.
+This runbook extends the Slice 00 spine (`deploy/README.md`): gunicorn-over-Unix-socket,
+nginx HTTPS on `127.0.0.1`, systemd secrets file. The sections below map 1:1 to the
+Slice 15 acceptance criteria.
 
 ---
 
-## Sign-off — the real "done"
+## §1 — App reachability + secrets + pgcrypto (AC1)
 
-The box is **NOT cleared to hold real patient data** until all four sign. Each
-signer confirms their column's Verifies in `deploy/CHECKLIST.md` pass on the real
-box.
+- App answers only on `127.0.0.1` via nginx HTTPS over the Unix socket (Slice 00).
+  Verify: `ss -tlnp | grep -v 127.0.0.1` shows the app on NO public interface.
+- Secrets load from `/etc/subay/subay.env` (root:root, `0600`) via systemd
+  `EnvironmentFile` — never repo/settings. Verify: `stat -c '%U %a' /etc/subay/subay.env`
+  → `root 600`.
+- pgcrypto encrypts the sensitive admin-store columns (not the de-id export, which is
+  already day-offsets + string IDs): run `deploy/sql/01-pgcrypto.sql`, confirm with the
+  DPO which columns, verify decryption round-trips before dropping any plaintext column.
 
-| Role | Confirms | Name | Signature | Date |
-|---|---|---|---|---|
-| **DPO** | RA 10173 posture: de-id boundary intact, secrets/audit/custody adequate (§1, §7, §8) | | | |
-| **Data Manager** | App + DB correct, least-privilege role, audit trail intact (§1, §3, §7) | | | |
-| **Operator** | Firewall/SSH, updates, power, backups, monitoring all verified (§2, §4, §5, §6) | | | |
-| **Co-DM** | Sealed envelopes in off-site custody; bus-factor procedure understood (§8) | | | |
+## §2 — SSH lockdown (AC2)
 
-Until every row is signed, treat the deployment as Phase 3 (runs, not cleared).
+1. Install `deploy/ssh/sshd_hardening.conf` → `/etc/ssh/sshd_config.d/10-subay.conf`;
+   set `ListenAddress`/`AllowUsers` to the real LAN IP + admin account; `sshd -t && systemctl reload ssh`.
+2. Run `deploy/firewall/ufw-setup.sh` with the real `ADMIN_SUBNET` (default-deny inbound;
+   only SSH/22 from admins; NO 80/443 from the LAN).
+3. Install `deploy/fail2ban/jail.local`; `systemctl enable --now fail2ban`.
+- Verify: password login refused, root login refused, port 22 unreachable from outside
+  the admin subnet.
+
+## §3 — Safe migrations (AC3)
+
+- Always migrate via `deploy/bin/safe-migrate.sh` — it `pg_dump`s first, applies
+  additive migrations directly, and REHEARSES `RunPython`/destructive migrations on a
+  scratch DB (exit 2) for human review before they ever touch production.
+- Never run `manage.py migrate` directly on the box for a destructive change.
+
+## §4 — Updates, power, LUKS unlock (AC4)
+
+- **Auto-install, never auto-reboot:** install `deploy/apt/50unattended-upgrades-subay`.
+  Reboots are operator-gated: `subay-reboot-required.timer` pushes a notice; a human
+  reboots and unlocks LUKS at the console.
+- **LUKS:** full-disk encryption; the passphrase is in the operator's head **and** in a
+  sealed envelope held by the Co-DM (§8). The box NEVER stores the passphrase. After any
+  power event the box stays off until a human unlocks it at the console.
+- **UPS + clean shutdown:** follow `deploy/systemd/ups-clean-shutdown.md` (NUT). Test by
+  pulling mains power and confirming a clean self-powered-off with the DB intact.
+- **Laptop deployment:** if the box is a laptop, the battery IS the UPS — skip NUT and
+  configure a low-battery clean shutdown via UPower (`/etc/UPower/UPower.conf`:
+  `CriticalPowerAction=PowerOff`, `PercentageAction` set). Test by unplugging and draining.
+  Keep the box running with the lid shut: set `HandleLidSwitch=ignore` (and
+  `HandleLidSwitchExternalPower=ignore`) in `/etc/systemd/logind.conf`, then
+  `systemctl restart systemd-logind` — otherwise a closed lid suspends the box and stops
+  backups/monitoring. Disable desktop auto-login and enforce a screen lock: an unlocked
+  logged-in session in front of PHI is an open door.
+
+## §5 — Three-part backup + quarterly restore drill (AC5)
+
+- `subay-backup.timer` runs `deploy/bin/backup.sh` nightly: (1) Postgres dump,
+  (2) GPG-encrypted `MEDIA_ROOT`, (3) GPG-encrypted secrets+pgcrypto key to a SEPARATE
+  custody mount (`KEY_DEST`). Off-site copy to Drive 2 per §8 custody.
+- **Quarterly:** run `deploy/bin/restore-drill.sh <dump> <secrets-archive>`. It restores
+  to a throwaway DB and proves pgcrypto DECRYPTS end-to-end with the escrowed key. Record
+  date + result in the drill log below. An untested backup does not count as a backup.
+
+  | Quarter | Date run | Restored OK | pgcrypto decrypt OK | By | Notes |
+  |---------|----------|-------------|---------------------|----|-------|
+  |         |          |             |                     |    |       |
+
+## §6 — Push-on-failure monitoring + dead-man's switch (AC6)
+
+- `subay-healthcheck.timer` runs `deploy/bin/healthcheck.sh` every 15 min: last-backup
+  age, disk %, app health, SSH-anomaly count. PUSHES via `notify-operator.sh` only on a
+  problem. On a healthy run it pings `SUBAY_DEADMAN_URL`; if those pings STOP, the
+  external watcher alerts (a dead box can't alert for itself).
+- **No PHI in any alert** — senders pass counts/ages/percentages/state only. Audit the
+  alert text periodically.
+
+## §7 — Audit integrity (AC7)
+
+- **NTP:** install chrony, single trusted upstream, `makestep` disabled in steady state
+  so audit timestamps never jump backward.
+- **Superuser:** run `deploy/sql/02-restrict-superuser.sql`; confirm Postgres superuser
+  is exactly the named Data Manager; the app connects as the least-privilege `subay` role.
+- **Immutable history:** `subay-history-export.timer` runs `export-history.sh` weekly,
+  hash-chaining each export and pushing to an object-lock (write-once) off-site bucket so
+  a changed past is detectable.
+
+## §8 — Sealed credentials + bus-factor (AC8)
+
+- **Sealed credentials:** LUKS passphrase, pgcrypto key, backup GPG key, and DB superuser
+  password are written once, sealed in tamper-evident envelopes, and held by the Co-DM
+  off-site (Drive 2 custody). The operator holds the working copies; the Co-DM holds the
+  sealed recovery copies.
+- **Bus-factor invocation procedure** (operator unavailable):
+  1. Two named custodians (Data Manager delegate + DPO) jointly authorize recovery in
+     writing.
+  2. Retrieve the sealed envelope from Co-DM custody; log the seal break (date, who, why).
+  3. Restore from the latest backup + key escrow per §5; run a restore drill to confirm.
+  4. Rotate every recovered secret afterward and re-seal new envelopes.
+  - The Co-DM gets **no routine data-entry access** — custody is recovery-only.
+- **Physical custody (laptop):** a laptop is portable, so physical theft is a real threat.
+  LUKS (§4) makes a stolen *powered-off* box ciphertext, but custody must still be enforced:
+  keep it in a locked room, cable-locked, and powered OFF (not suspended) when unattended —
+  suspend keeps the LUKS key in RAM, so a suspended laptop is NOT protected by LUKS. Record
+  the physical-custody arrangement in the DPO sign-off below.
+
+---
+
+### Sign-off (HITL — required before production use)
+
+| Item | Owner | Date | Signature |
+|------|-------|------|-----------|
+| DPO RA 10173 posture review | DPO | | |
+| Physical workstation hardened (§1–§4) | Data Manager | | |
+| Backup + restore drill passed (§5) | Operator | | |
+| Monitoring live, alerts PHI-free (§6) | Operator | | |
+| Bus-factor envelopes sealed + custody confirmed (§8) | Co-DM | | |

@@ -1,4 +1,4 @@
-# Slice 11 — RENOVA: Source attribution & genotype concordance (Obj 5)
+# Slice 11 — SUBAY: Source attribution & genotype concordance (Obj 5)
 
 **Type:** AFK (locked decision rules; reviewer enters the graded judgments)
 **Deep module:** none (source-attribution priority is a derived-variable contract)

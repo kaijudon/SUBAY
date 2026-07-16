@@ -1,0 +1,14 @@
+# SUBAY — nightly backup unit (Slice 15, AC5). Pairs with subay-backup.timer.
+# Install both at /etc/systemd/system/; enable --now the TIMER.
+[Unit]
+Description=SUBAY three-part backup
+After=postgresql.service
+
+[Service]
+Type=oneshot
+User=subay
+Group=subay
+EnvironmentFile=/etc/subay/subay.env
+ExecStart=/opt/subay/deploy/bin/backup.sh
+# If a backup fails, push an alert through the same channel as monitoring (AC6).
+ExecStopPost=/bin/sh -c 'test $EXIT_STATUS = 0 || /opt/subay/deploy/bin/notify-operator.sh backup-failed "nightly backup exited $EXIT_STATUS"'

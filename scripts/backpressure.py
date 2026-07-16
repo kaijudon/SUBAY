@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Backpressure evidence collector for the RENOVA Ralph pipeline.
+"""Backpressure evidence collector for the SUBAY Ralph pipeline.
 
 Runs the backpressure checks the ralph ``build.done`` gate requires and prints a
 single evidence line in the exact token format ``parse_backpressure_evidence``
@@ -28,7 +28,7 @@ Tooling per DEC-004 (.ralph/agent/decisions.md) -- zero new deps except mypy:
 
 Usage::
 
-    conda run -n renova_env python scripts/backpressure.py
+    conda run -n subay_env python scripts/backpressure.py
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ PY = sys.executable
 
 # Product code under measurement: the registry app, excluding tests, migrations
 # and package markers.
-PRODUCT_ROOT = ROOT / "renova" / "registry"
+PRODUCT_ROOT = ROOT / "subay" / "registry"
 
 # Honest thresholds (tuned against the real slice-01 codebase).
 COVERAGE_MIN = 70.0       # percent of product statements executed by the suite
@@ -56,7 +56,7 @@ DUP_WINDOW = 8            # consecutive normalized lines that count as a clone
 # stubs; Django's dynamic model layer is out of scope per DEC-004 (non-strict).
 TYPECHECK_TARGETS = [
     "scripts/backpressure.py",
-    "renova/registry/management/commands/export_analysis_set.py",
+    "subay/registry/management/commands/export_analysis_set.py",
 ]
 
 

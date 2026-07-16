@@ -1,0 +1,12 @@
+# SUBAY — daily check for a pending reboot (Slice 15, AC4). Pairs with the .service.
+# sudo systemctl enable --now subay-reboot-required.timer
+
+[Unit]
+Description=SUBAY: daily pending-reboot check
+
+[Timer]
+OnCalendar=*-*-* 08:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

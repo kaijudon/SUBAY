@@ -1,0 +1,48 @@
+/* SUBAY deploy course - shared stylesheet. Tufte-ish, print-friendly. */
+:root {
+  --ink: #1a1a1a;
+  --paper: #fdfdfb;
+  --muted: #6b6b6b;
+  --rule: #d8d4c8;
+  --accent: #7a1f1f;      /* subay maroon */
+  --accent-soft: #f3e9e9;
+  --ok: #2f6b2f;
+  --warn: #8a5a00;
+  --warn-soft: #fbf3df;
+  --code-bg: #f4f2ec;
+  --mono: "SF Mono", "Menlo", "Consolas", monospace;
+  --serif: "Iowan Old Style", "Palatino Linotype", "Georgia", serif;
+}
+* { box-sizing: border-box; }
+body {
+  font-family: var(--serif);
+  color: var(--ink);
+  background: var(--paper);
+  line-height: 1.5;
+  max-width: 46rem;
+  margin: 3rem auto;
+  padding: 0 1.5rem;
+}
+h1 { font-size: 1.9rem; line-height: 1.15; margin: 0 0 .2rem; }
+h2 { font-size: 1.3rem; margin: 2.2rem 0 .6rem; border-bottom: 1px solid var(--rule); padding-bottom: .2rem; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .3rem; }
+.kicker { text-transform: uppercase; letter-spacing: .12em; font-size: .72rem; color: var(--accent); font-family: var(--mono); }
+.lede { font-size: 1.05rem; color: var(--muted); margin: .4rem 0 1.2rem; }
+code { font-family: var(--mono); font-size: .85em; background: var(--code-bg); padding: .1em .35em; border-radius: 3px; }
+pre { background: var(--code-bg); padding: .8rem 1rem; border-radius: 6px; overflow-x: auto; border-left: 3px solid var(--accent); }
+pre code { background: none; padding: 0; }
+a { color: var(--accent); text-underline-offset: 2px; }
+.check { color: var(--ok); font-weight: 600; }
+.warn { background: var(--warn-soft); border-left: 3px solid var(--warn); padding: .6rem .9rem; border-radius: 0 6px 6px 0; margin: .9rem 0; }
+.warn strong { color: var(--warn); }
+.phase { border: 1px solid var(--rule); border-radius: 8px; padding: .2rem 1.1rem 1rem; margin: 1rem 0; background: #fff; }
+.phase h3 { margin-top: .9rem; }
+.tag { display: inline-block; font-family: var(--mono); font-size: .7rem; background: var(--accent-soft); color: var(--accent); padding: .1em .5em; border-radius: 10px; vertical-align: middle; }
+table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: .92rem; }
+th, td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-family: var(--mono); font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.footer { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--rule); font-size: .85rem; color: var(--muted); }
+.ask { background: var(--accent-soft); border-radius: 6px; padding: .7rem 1rem; font-size: .9rem; margin: 1.4rem 0; }
+ol.steps { padding-left: 1.2rem; }
+ol.steps > li { margin: .5rem 0; }
+@media print { body { margin: 0; max-width: none; } pre { white-space: pre-wrap; } }

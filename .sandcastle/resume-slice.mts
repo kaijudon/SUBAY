@@ -1,6 +1,7 @@
 import { execSync } from "node:child_process";
 import { createSandbox, claudeCode } from "@ai-hero/sandcastle";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
+import { BUILDER_HABITS, REVIEWER_HABITS } from "./fable-habits.mts";
 
 // Resume driver: the Builder already committed work on agent/slice-NN, but the
 // run died (e.g. API stream timeout) before review/merge. This skips Planner and
@@ -58,7 +59,7 @@ for (let round = 1; round <= MAX_REVIEW_ROUNDS; round++) {
     name: `reviewer-${slice}-resume-r${round}`,
     agent: reviewer,
     promptFile: "./.sandcastle/reviewer.md",
-    promptArgs,
+    promptArgs: { ...promptArgs, FABLE_HABITS: REVIEWER_HABITS },
     completionSignal: [APPROVED, CHANGES],
     maxIterations: 5,
   });
@@ -75,7 +76,7 @@ for (let round = 1; round <= MAX_REVIEW_ROUNDS; round++) {
     name: `builder-${slice}-resume-r${round}`,
     agent: builder,
     promptFile: "./.sandcastle/builder.md",
-    promptArgs,
+    promptArgs: { ...promptArgs, FABLE_HABITS: BUILDER_HABITS },
     completionSignal: [BUILD_DONE, BUILD_BLOCKED],
     maxIterations: 10,
   });

@@ -1,4 +1,4 @@
-# Slice 14 — RENOVA: Safety release-timeliness surface
+# Slice 14 — SUBAY: Safety release-timeliness surface
 
 **Type:** AFK
 **Deep module:** none (analytics view over existing models + a release-event record)
