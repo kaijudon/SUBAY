@@ -18,7 +18,7 @@ const AUDIT_BLOCKED = "<promise>AUDIT_BLOCKED</promise>";
 const box = await createSandbox({
   branch,
   // containerd image store needs the fully-qualified ref.
-  sandbox: docker({ imageName: "docker.io/library/sandcastle:renova_final" }),
+  sandbox: docker({ imageName: "docker.io/library/sandcastle:subay_final" }),
   hooks: {
     sandbox: {
       onSandboxReady: [

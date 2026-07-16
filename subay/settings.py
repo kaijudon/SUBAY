@@ -84,6 +84,9 @@ USE_TZ = True
 STATIC_URL = "static/"
 # Admin reskin stylesheet lives here (zero-dependency theme via CSS custom props).
 STATICFILES_DIRS = [BASE_DIR / "static"]
+# collectstatic gathers admin/app assets here; nginx serves /static/ from this path
+# (deploy/nginx-subay.conf). Overridable for non-default deployments.
+STATIC_ROOT = env("STATIC_ROOT", default=str(BASE_DIR / "staticfiles"))
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Genotyping ingest stores content-addressed files (named by SHA-256) here. The

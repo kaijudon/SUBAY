@@ -1,4 +1,4 @@
-# SUBAY — monitoring schedule (Slice 15, AC6). Every 15 min. enable --now this timer.
+# deploy/systemd/subay-healthcheck.timer — Slice 15 §6: run monitoring every 15 min.
 [Unit]
 Description=SUBAY healthcheck every 15 minutes
 

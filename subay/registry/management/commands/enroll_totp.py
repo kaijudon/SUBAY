@@ -5,7 +5,7 @@ The admin login page's "OTP Device" dropdown is empty until the account has a
 enrollment secret so it can be added to an authenticator app (Google
 Authenticator, Aegis, 1Password, …). It replaces the one-off generate_OTP.py.
 
-Usage (env loaded, renova_env active):
+Usage (env loaded, subay_env active):
     python manage.py enroll_totp cmvprojectuser              # device 'operator'
     python manage.py enroll_totp cmvprojectuser --device admin
     python manage.py enroll_totp cmvprojectuser --qr         # print scannable QR

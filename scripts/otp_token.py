@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Print the current TOTP token for a device, and optionally clear its throttle.
 
-Usage (env must be loaded via `renova-env` and renova_env conda env active):
+Usage (env must be loaded via `subay-env` and subay_env conda env active):
     python scripts/otp_token.py                 # token for the 'operator' device
     python scripts/otp_token.py --reset         # clear throttle lockout, then token
     python scripts/otp_token.py --device admin  # a different device name
@@ -14,10 +14,10 @@ from pathlib import Path
 import django
 
 # Make the project root importable no matter where this is run from, so
-# `renova.settings` resolves even though this file lives in scripts/.
+# `subay.settings` resolves even though this file lives in scripts/.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "renova.settings")
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "subay.settings")
 django.setup()
 
 from django_otp.oath import totp  # noqa: E402  (must follow django.setup())

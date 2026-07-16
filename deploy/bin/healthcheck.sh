@@ -1,48 +1,86 @@
 #!/usr/bin/env bash
-# SUBAY — push-on-failure monitoring (Slice 15, AC6).
-# Run from a frequent systemd timer (e.g. every 15 min). As the subay operator.
+# deploy/bin/healthcheck.sh — Slice 15 §6: push-on-failure monitoring
+# =============================================================================
+# Run every ~15 min via systemd timer (deploy/systemd/subay-healthcheck.timer).
 #
-# Watches: last-backup age, disk %, app health, SSH anomalies. PUSHES only on a
-# problem (quiet when healthy). Pairs with a DEAD-MAN'S SWITCH: this script also
-# "checks in" on every healthy run; if the check-ins STOP, an external watcher alerts
-# (because a box that has gone silent can't send its own failure alert). No PHI ever.
-set -euo pipefail
+# Acceptance (issue 15): "Push-on-failure monitoring covers last-backup age,
+# disk %, app health, and SSH anomalies, has a dead-man's switch, and carries no
+# PHI in any alert."
+#
+# Two channels:
+#   * ALERT (push on failure): only fires when something is WRONG. Sends a terse,
+#     PHI-FREE message via the operator-supplied SUBAY_ALERT_CMD.
+#   * HEARTBEAT (dead-man's switch): pings SUBAY_HEARTBEAT_URL on every SUCCESS.
+#     If the box dies entirely, the pings stop and the external heartbeat service
+#     (e.g. healthchecks.io) alarms — catching the failure a push-only design can't.
+#
+# NO PHI RULE: this script only ever emits metric names, counts, thresholds, and
+# the host name — never a subject_id, a row's contents, or a query result.
+# =============================================================================
+set -uo pipefail   # NOT -e: a single failed check must still let the others run
 
-NOTIFY="${NOTIFY:-/opt/subay/deploy/bin/notify-operator.sh}"
-DATA_DEST="${DATA_DEST:-/var/backups/subay/data}"
-DISK_PATH="${DISK_PATH:-/}"
-DISK_MAX_PCT="${DISK_MAX_PCT:-85}"
-BACKUP_MAX_AGE_H="${BACKUP_MAX_AGE_H:-26}"   # daily backup + 2h grace
-DEADMAN_URL="${SUBAY_DEADMAN_URL:-}"        # external heartbeat endpoint (push on OK)
+# ---- operator settings (override via the systemd unit's Environment=) --------
+APP_URL="${SUBAY_APP_URL:-https://127.0.0.1/}"
+STAMPFILE="${SUBAY_BACKUP_STAMP:-/var/lib/subay/last-backup.stamp}"
+MAX_BACKUP_AGE_H="${SUBAY_MAX_BACKUP_AGE_H:-26}"     # nightly + slack
+DISK_PATHS="${SUBAY_DISK_PATHS:-/ /var}"
+DISK_WARN_PCT="${SUBAY_DISK_WARN_PCT:-85}"
+ALERT_CMD="${SUBAY_ALERT_CMD:-}"                     # e.g. 'mail -s SUBAY op@example' or a curl
+# Single PHI-free push chokepoint (deploy/bin/notify-operator.sh). Preferred over
+# ALERT_CMD so every operator alert — monitoring, reboot-required — arrives the same
+# way through one place that must stay PHI-free.
+NOTIFY="${SUBAY_NOTIFY:-/opt/subay/deploy/bin/notify-operator.sh}"
+HEARTBEAT_URL="${SUBAY_HEARTBEAT_URL:-}"            # dead-man's switch ping target
+# -----------------------------------------------------------------------------
 
-problems=0
-alert() { "$NOTIFY" "$1" "$2"; problems=$((problems+1)); }
+HOST="$(hostname -s)"
+PROBLEMS=()
+add() { PROBLEMS+=("$1"); }
 
-# 1. Last-backup age.
-if [ -f "${DATA_DEST}/.last_backup_epoch" ]; then
-  age_h=$(( ( $(date -u +%s) - $(cat "${DATA_DEST}/.last_backup_epoch") ) / 3600 ))
-  [ "$age_h" -gt "$BACKUP_MAX_AGE_H" ] && \
-    alert "backup-stale" "last backup is ${age_h}h old (>${BACKUP_MAX_AGE_H}h)"
+# 1. last-backup age (reads the stamp backup.sh writes on success; no data).
+if [[ -f "$STAMPFILE" ]]; then
+    age_h=$(( ( $(date -u +%s) - $(cat "$STAMPFILE") ) / 3600 ))
+    (( age_h > MAX_BACKUP_AGE_H )) && add "backup stale: ${age_h}h > ${MAX_BACKUP_AGE_H}h"
 else
-  alert "backup-missing" "no backup completion marker found"
+    add "backup stamp missing (${STAMPFILE}) — has backup.sh ever succeeded?"
 fi
 
-# 2. Disk %.
-pct="$(df --output=pcent "$DISK_PATH" | tail -1 | tr -dc '0-9')"
-[ "${pct:-100}" -ge "$DISK_MAX_PCT" ] && \
-  alert "disk-full" "${DISK_PATH} at ${pct}% (>=${DISK_MAX_PCT}%)"
+# 2. disk % on the paths that matter (Postgres + backups fill these).
+for p in $DISK_PATHS; do
+    if used=$(df --output=pcent "$p" 2>/dev/null | tr -dc '0-9'); then
+        (( used > DISK_WARN_PCT )) && add "disk ${p} at ${used}% > ${DISK_WARN_PCT}%"
+    fi
+done
 
-# 3. App health — gunicorn socket answers and the service is active.
-systemctl is-active --quiet subay || alert "app-down" "subay.service is not active"
+# 3. app health — HTTP reachability only. We never fetch a data page, so no PHI
+#    can be captured. --insecure because the cert is locally-trusted (Slice 0).
+# curl's -w already prints the code (000 on connection failure), so DON'T append
+# a fallback echo — that would concatenate into "000000". Ignore curl's exit code.
+code=$(curl -s -o /dev/null -w '%{http_code}' --insecure --max-time 10 "$APP_URL" || true)
+code=${code:-000}
+[[ "$code" =~ ^(200|301|302|403)$ ]] || add "app unhealthy: HTTP ${code} from ${APP_URL}"
 
-# 4. SSH anomalies — recent failed auths (count only, no usernames/IPs => PHI-free op data).
-fails="$(journalctl -u ssh --since '-1h' 2>/dev/null | grep -c 'Failed password\|Invalid user' || true)"
-[ "${fails:-0}" -gt 20 ] && alert "ssh-anomaly" "${fails} failed SSH auths in last hour"
-
-# Dead-man's switch: only ping the external heartbeat when everything is HEALTHY.
-# If pings stop arriving, the external watcher raises the alarm this box can't send.
-if [ "$problems" -eq 0 ] && [ -n "$DEADMAN_URL" ]; then
-  curl --fail --silent --max-time 10 "$DEADMAN_URL" >/dev/null || true
+# 4. SSH anomalies — COUNT of failed logins in the last hour (a number, not who/where).
+if command -v journalctl >/dev/null 2>&1; then
+    fails=$(journalctl -u ssh --since '1 hour ago' 2>/dev/null | grep -c 'Failed password' || true)
+    (( fails > 20 )) && add "ssh: ${fails} failed logins in last hour"
 fi
 
-exit 0
+# ---- dispatch ---------------------------------------------------------------
+if (( ${#PROBLEMS[@]} > 0 )); then
+    SUMMARY="$(printf '%s; ' "${PROBLEMS[@]}")"
+    MSG="SUBAY[${HOST}] ALERT: ${SUMMARY}"
+    echo "$MSG" >&2
+    # Prefer the single notify chokepoint; fall back to a raw ALERT_CMD if set.
+    if [[ -x "$NOTIFY" ]]; then
+        "$NOTIFY" "healthcheck" "$SUMMARY" || echo "alert dispatch failed" >&2
+    elif [[ -n "$ALERT_CMD" ]]; then
+        printf '%s\n' "$MSG" | eval "$ALERT_CMD" || echo "alert dispatch failed" >&2
+    fi
+    exit 1
+fi
+
+# All green: fire the dead-man's-switch heartbeat so an external monitor knows the
+# box is alive. Silence here (box dead) is what makes that monitor alarm.
+[[ -n "$HEARTBEAT_URL" ]] && curl -fsS --max-time 10 "$HEARTBEAT_URL" >/dev/null 2>&1 || true
+echo "SUBAY[${HOST}] healthy"

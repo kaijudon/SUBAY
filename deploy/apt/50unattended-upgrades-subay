@@ -1,10 +1,13 @@
-// SUBAY — unattended security upgrades, but NEVER auto-reboot (Slice 15, AC4).
-// Install at /etc/apt/apt.conf.d/50unattended-upgrades-subay.
+// deploy/apt/50unattended-upgrades-subay — Slice 15 §4
+// Install: sudo cp deploy/apt/50unattended-upgrades-subay /etc/apt/apt.conf.d/
+//          sudo cp deploy/apt/20auto-upgrades /etc/apt/apt.conf.d/
+//          sudo apt install -y unattended-upgrades
 //
-// WHY: security patches should land automatically. But this box has a LUKS-encrypted
-// disk whose passphrase is typed by a human at the console (AC4). An automatic reboot
-// would hang at the passphrase prompt with the database OFFLINE and nobody there.
-// So: auto-INSTALL yes, auto-REBOOT no. Reboots are operator-gated (see RUNBOOK §4).
+// Security updates auto-INSTALL, but the box NEVER auto-reboots. Acceptance
+// (issue 15): "reboots are operator-gated ... never auto-reboot a LUKS box into a
+// hung passphrase prompt." An unattended reboot would stop at the LUKS console
+// prompt with nobody there to type the passphrase — the app would be down until a
+// human walks to the machine. So reboots are a deliberate manual step (RUNBOOK §4).
 
 Unattended-Upgrade::Allowed-Origins {
     "${distro_id}:${distro_codename}-security";
@@ -12,13 +15,15 @@ Unattended-Upgrade::Allowed-Origins {
     "${distro_id}ESM:${distro_codename}-infra-security";
 };
 
-// The critical line: do NOT let the machine reboot itself.
-Unattended-Upgrade::Automatic-Reboot "false";
-
-// Email the operator when a reboot is REQUIRED so a human can schedule it.
-Unattended-Upgrade::Mail "operator@example.org";
-Unattended-Upgrade::MailReport "on-change";
-
-// Don't let a half-applied upgrade wedge dpkg.
+// Do the security patches automatically...
 Unattended-Upgrade::AutoFixInterruptedDpkg "true";
 Unattended-Upgrade::MinimalSteps "true";
+
+// ...but NEVER reboot on our own. The operator reboots at the console when they
+// can be present to enter the LUKS passphrase (see RUNBOOK §4).
+Unattended-Upgrade::Automatic-Reboot "false";
+
+// Keep a local log; write a stamp file when a reboot becomes REQUIRED so the
+// operator (and the healthcheck) can see "patched, awaiting your reboot".
+Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+Unattended-Upgrade::Remove-Unused-Dependencies "true";

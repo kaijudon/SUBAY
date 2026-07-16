@@ -27,7 +27,7 @@ const CHANGES = "<promise>CHANGES</promise>";
 // out its HEAD, so the Reviewer sees the Builder's commit.
 const box = await createSandbox({
   branch,
-  sandbox: docker({ imageName: "docker.io/library/sandcastle:renova_final" }),
+  sandbox: docker({ imageName: "docker.io/library/sandcastle:subay_final" }),
   hooks: {
     sandbox: {
       onSandboxReady: [

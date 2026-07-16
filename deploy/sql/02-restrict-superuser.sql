@@ -1,33 +1,51 @@
--- SUBAY — audit integrity: restrict Postgres superuser (Slice 15, AC7).
+-- deploy/sql/02-restrict-superuser.sql — Slice 15 §7: least-privilege DB roles
+-- =============================================================================
+-- Run once, as the postgres superuser, against the subay database:
+--     sudo -u postgres psql -d subay -f deploy/sql/02-restrict-superuser.sql
 --
--- WHY: django-simple-history records every change, but history is only tamper-EVIDENT
--- if no casual account can rewrite it. Postgres superuser can bypass row security and
--- edit history tables directly, so superuser is restricted to ONE human: the Data
--- Manager. The app's own role (`subay`) is a least-privilege login, NOT a superuser.
+-- WHY: audit integrity depends on the application NOT running as a superuser.
+-- django-simple-history writes an append-only change log (the audit trail), but a
+-- superuser DB connection could silently rewrite or truncate history rows,
+-- defeating tamper-evidence. Acceptance criterion (issue 15): "Postgres superuser
+-- restricted to the Data Manager." So:
+--   * the app login role `subay` gets exactly the privileges it needs — no more;
+--   * superuser stays with the built-in `postgres` account, which only the Data
+--     Manager can reach (local peer auth at the console), never the app.
 --
--- Run once on the real box, connected as the bootstrap superuser (HITL checkpoint).
+-- This assumes the app role `subay` and database `subay` already exist (created
+-- in LAPTOP-DEPLOY Phase 3.2). It is idempotent — safe to re-run.
+-- =============================================================================
 
--- 1. The application role: can read/write app tables, CANNOT create roles, CANNOT
---    bypass RLS, CANNOT touch other databases. gunicorn connects as this role.
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'subay') THEN
-    CREATE ROLE subay LOGIN PASSWORD NULL;   -- password set out-of-band, never here
-  END IF;
-END$$;
+\set ON_ERROR_STOP on
 
-ALTER ROLE subay NOSUPERUSER NOCREATEROLE NOCREATEDB NOBYPASSRLS;
+-- 1. The app role must NOT be a superuser and must NOT create roles/databases.
+--    (Phase 3.2 creates it with LOGIN only, but re-assert in case it drifted.)
+ALTER ROLE subay NOSUPERUSER NOCREATEDB NOCREATEROLE;
+
+-- 2. Grant only what the app needs on the existing schema objects.
 GRANT CONNECT ON DATABASE subay TO subay;
 GRANT USAGE ON SCHEMA public TO subay;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO subay;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO subay;
+
+-- 3. Same grants for tables/sequences created by FUTURE migrations, so a new
+--    slice's tables don't silently lose app access. Applies to objects created
+--    by the postgres owner from here on.
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO subay;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO subay;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+    GRANT USAGE, SELECT ON SEQUENCES TO subay;
 
--- 2. Confirm superuser membership is exactly one named human (the Data Manager).
---    Review the output; any unexpected superuser is a finding to remediate.
---    SELECT rolname FROM pg_roles WHERE rolsuper;
+-- 4. Deliberately NOT granted: TRUNCATE, and DROP/ALTER on tables. The app can
+--    read and write rows but cannot destroy a table or reset a sequence — narrowing
+--    the blast radius of a compromised app connection against the history tables.
+--
+-- Note on DELETE: django-simple-history keeps its record in SEPARATE *_history
+-- tables that the ORM only ever INSERTs into. Revoking DELETE on the live tables
+-- would break legitimate admin deletes, so DELETE stays; the tamper-evidence comes
+-- from history rows the app never updates or deletes in normal operation, plus the
+-- periodic immutable off-site history export (see deploy/RUNBOOK.md §7).
 
--- NTP: enforced at the OS layer, not here. The clock must be trustworthy for audit
--- timestamps to mean anything — see deploy/RUNBOOK.md §7 (chrony, single upstream,
--- makestep disabled in steady state so history timestamps never jump backwards).
+-- Verify: the app role is not a superuser.
+--     sudo -u postgres psql -d subay -c "\du subay"
+-- expect the "Attributes" column to be empty (no "Superuser", no "Create role").
