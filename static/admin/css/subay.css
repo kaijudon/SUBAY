@@ -72,3 +72,38 @@ body {
 #changelist table tbody tr:hover {
   background: var(--selected-row);
 }
+
+/* Minimalist icons (Aiko set). Each SVG is applied as a mask so the glyph is a
+   pure silhouette painted with currentColor — it inherits the surrounding text
+   colour and the clinical-teal theme, in light or dark, with no per-file fill.
+   Cosmetic only: purely decorative, always paired with a text label and
+   aria-hidden, so screen readers and the no-CSS fallback lose nothing. */
+.ico {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.15em;
+  background-color: currentColor;
+  -webkit-mask: center / contain no-repeat;
+  mask: center / contain no-repeat;
+}
+/* Page-title icon: a touch larger, muted so it frames rather than shouts. */
+.ico-title {
+  width: 1.15em;
+  height: 1.15em;
+  vertical-align: -0.18em;
+  margin-right: 0.4em;
+  color: var(--primary);
+}
+/* Inline action-link icon: small, sits just before the link text. */
+.ico-action { margin-right: 0.3em; width: 0.95em; height: 0.95em; }
+
+.ico-alarm      { -webkit-mask-image: url("../img/icons/alarm-warning.svg");   mask-image: url("../img/icons/alarm-warning.svg"); }
+.ico-shield     { -webkit-mask-image: url("../img/icons/shield-check.svg");    mask-image: url("../img/icons/shield-check.svg"); }
+.ico-check      { -webkit-mask-image: url("../img/icons/check.svg");           mask-image: url("../img/icons/check.svg"); }
+.ico-warning    { -webkit-mask-image: url("../img/icons/error-warning.svg");   mask-image: url("../img/icons/error-warning.svg"); }
+.ico-ok         { -webkit-mask-image: url("../img/icons/checkbox-circle.svg"); mask-image: url("../img/icons/checkbox-circle.svg"); }
+
+/* Semantic accents so the two action verbs read at a glance. */
+.ico-warning { color: var(--accent); }
+.ico-ok      { color: var(--primary); }

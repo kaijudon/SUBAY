@@ -1,5 +1,7 @@
 {% extends "admin/base_site.html" %}
 
+{% block content_title %}{% if title %}<h1><span class="ico ico-title ico-shield" aria-hidden="true"></span>{{ title }}</h1>{% endif %}{% endblock %}
+
 {% block breadcrumbs %}
 <div class="breadcrumbs">
   <a href="{% url 'admin:index' %}">Home</a>
@@ -32,7 +34,7 @@
     </tbody>
   </table>
   {% else %}
-  <p class="help">Nothing pending. <a href="{{ group.changelist_url }}">View all</a>.</p>
+  <p class="help"><span class="ico ico-ok" aria-hidden="true"></span> Nothing pending. <a href="{{ group.changelist_url }}">View all</a>.</p>
   {% endif %}
 </div>
 {% endfor %}
