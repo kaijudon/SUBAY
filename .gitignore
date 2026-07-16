@@ -38,7 +38,6 @@ generate_OTP.py
 # and generated artefacts stay local; only the Django app (subay/, templates/,
 # static/, deploy/, manage.py, deps, README) ships.
 .agents/
-.sandcastle/
 .worktrees/
 
 # Agent/process instruction + spec docs (local working material).
