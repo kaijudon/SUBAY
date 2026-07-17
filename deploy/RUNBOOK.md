@@ -111,6 +111,76 @@ backups must be recovered):
 **Test it:** at standup, the Co-DM performs a dry-run — locate the envelopes,
 confirm they are sealed and dated, and read this procedure aloud with the DM.
 
+## §9 — Shipping an app update to the deployed box
+
+Rolling new code onto the live box is an **Operator** task done **physically at the box**.
+A bare `git pull` + restart is unsafe when the update carries migrations: it can serve new code against an old schema.
+This is the ordered ritual; it uses the box's own tooling (`safe-migrate.sh`, the backup service) and **does not reboot** the LUKS box.
+Do the steps in order.
+
+**1. Announce brief downtime, then take a fresh backup — the rollback point.**
+
+```sh
+sudo systemctl start subay-backup.service
+```
+
+**2. Pull the new code.**
+
+```sh
+cd /opt/subay
+git pull
+```
+
+**3. Update the conda env only if `environment.yml` changed.**
+
+```sh
+git diff --name-only HEAD@{1} HEAD | grep -q environment.yml && \
+  sudo conda env update -f environment.yml -p /opt/conda/envs/subay_env
+```
+
+**4. Migrate the safe way — never bare `manage.py migrate` on prod.**
+
+```sh
+set -a; source <(sudo cat /etc/subay/subay.env); set +a
+sudo -E deploy/bin/safe-migrate.sh
+```
+
+`safe-migrate.sh` (§3) dumps the DB first, prints the plan, and rehearses any data/destructive migration on a throwaway scratch DB restored from that dump before it touches prod.
+If it reports **model/migration drift**, stop: the committed migrations do not match the models.
+Regenerate and review them in dev, then redeploy — do not force past it.
+
+**5. Rebuild static assets** (CSS/JS/admin — needed whenever front-end files changed).
+
+```sh
+/opt/conda/envs/subay_env/bin/python manage.py collectstatic --noinput
+```
+
+**6. Restart the service to load the new code into gunicorn.**
+
+```sh
+sudo systemctl restart subay
+```
+
+A code update needs only this restart, **not** a reboot.
+Rebooting stops the box at the LUKS passphrase prompt (§4) — only ever reboot when you are at the console.
+
+**7. Verify recovery.**
+
+```sh
+systemctl is-active postgresql subay      # both -> active
+```
+
+Then open `https://127.0.0.1/` and log into `/admin/` to confirm the app answers.
+
+**Rollback** if any of steps 4–7 goes bad.
+`safe-migrate.sh` prints the exact DB-restore command on completion; it looks like:
+
+```sh
+pg_restore --clean --no-owner --dbname="$DATABASE_URL" /var/backups/subay/pre-migrate/subay-<TS>.dump
+```
+
+Then revert the code with `git checkout <previous-commit>` and `sudo systemctl restart subay`.
+
 ---
 
 ## Sign-off — the real "done"
