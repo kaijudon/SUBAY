@@ -1,3 +1,4 @@
+from django import forms
 from django.contrib import admin
 from django.contrib.admin import SimpleListFilter
 from simple_history.admin import SimpleHistoryAdmin
@@ -202,8 +203,27 @@ class HospitalizationInline(admin.TabularInline):
     extra = 0
 
 
+class DateOfBirthWidgetMixin:
+    """Render date_of_birth as a native HTML5 date input.
+
+    A birthday is always a past calendar date, but the admin's default
+    ``AdminDateWidget`` renders a "Today" shortcut (meaningless for a DOB) and a
+    server-timezone note. Targeting the field by name keeps that widget on the
+    other date fields (kt_date, draw dates) where "Today" is a valid entry. The
+    explicit ISO format makes the browser display an existing value, since a
+    ``type="date"`` input only accepts YYYY-MM-DD.
+    """
+
+    def formfield_for_dbfield(self, db_field, request, **kwargs):
+        if db_field.name == "date_of_birth":
+            kwargs["widget"] = forms.DateInput(
+                attrs={"type": "date"}, format="%Y-%m-%d"
+            )
+        return super().formfield_for_dbfield(db_field, request, **kwargs)
+
+
 @admin.register(Recipient)
-class RecipientAdmin(SimpleHistoryAdmin):
+class RecipientAdmin(DateOfBirthWidgetMixin, SimpleHistoryAdmin):
     list_display = (
         "subject_id", "sex", "kt_date", "age", "risk_stratum", "induction_agent",
         "completion_status", "sequencing_included",
@@ -276,7 +296,7 @@ class DonorVisitAdmin(SimpleHistoryAdmin):
 
 
 @admin.register(Donor)
-class DonorAdmin(SimpleHistoryAdmin):
+class DonorAdmin(DateOfBirthWidgetMixin, SimpleHistoryAdmin):
     list_display = ("subject_id", "sex", "donor_type", "relation", "baseline_serostatus")
     search_fields = ("subject_id",)  # string PK; also the autocomplete prefactor
     readonly_fields = ("baseline_serostatus",)  # derived from the single serology
