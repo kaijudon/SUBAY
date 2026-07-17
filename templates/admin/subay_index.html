@@ -1,0 +1,55 @@
+{% extends "admin/index.html" %}
+{% load i18n %}
+
+{# The derived dashboard panel rides above the stock workflow-section grid, then
+   {{ block.super }} renders the contrib #content-main below it unchanged. The
+   whole panel is omitted when no tile is permitted (dashboard_tiles empty), so a
+   role with none of the gated permissions sees no box at all. Read-only; every
+   number is derived on request (see dashboard.py). Reuses the shipped .ico set
+   and pastel theme - no JS, no new dependency. #}
+{% block content %}
+{% if dashboard_tiles %}
+<div id="subay-dashboard" class="subay-dashboard">
+  {% for tile in dashboard_tiles %}
+  <section class="dashboard-tile dashboard-tile-{{ tile.kind }}" aria-labelledby="tile-{{ tile.key }}-heading">
+    <h2 id="tile-{{ tile.key }}-heading" class="tile-heading">
+      <span class="ico {{ tile.icon }}" aria-hidden="true"></span>{{ tile.title }}
+    </h2>
+    {% if tile.kind == "count" %}
+    <p class="tile-big-count"><a href="{{ tile.link }}" title="{{ tile.link_label }}">{{ tile.count }}</a></p>
+    <p class="tile-link"><a href="{{ tile.link }}">{{ tile.link_label }}</a></p>
+    {% elif tile.kind == "schedule" %}
+    <p class="tile-schedule-summary">
+      <span class="sched-count sched-overdue">{{ tile.counts.overdue }} overdue</span>
+      <span class="sched-count sched-due_soon">{{ tile.counts.due_soon }} due soon</span>
+      <span class="sched-count sched-missed">{{ tile.counts.missed }} missed</span>
+    </p>
+    {% if tile.gaps %}
+    <ul class="tile-gaps">
+      {% for gap in tile.gaps %}
+      <li class="tile-gap gap-{{ gap.bucket }}">
+        <a href="{{ gap.add_url }}">{{ gap.subject_id }} - {{ gap.timepoint_label }}</a>
+        <span class="gap-meta">{{ gap.bucket }} - due {{ gap.expected_date|date:"Y-m-d" }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="tile-empty">{% translate "No visits due, overdue, or missed." %}</p>
+    {% endif %}
+    {% else %}
+    <ul class="tile-buckets">
+      {% for bucket in tile.buckets %}
+      <li class="tile-bucket">
+        <span class="bucket-count">{{ bucket.count }}</span>
+        <span class="bucket-label">{{ bucket.label }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    <p class="tile-total">{% translate "Total recipients" %}: <strong>{{ tile.total }}</strong></p>
+    {% endif %}
+  </section>
+  {% endfor %}
+</div>
+{% endif %}
+{{ block.super }}
+{% endblock %}

@@ -24,6 +24,12 @@ TIMEPOINT_OFFSETS: dict[str, int] = {
     "day_180": 180,
 }
 
+# Dashboard T1 (issue #16) look-ahead horizon: a synthesized visit gap whose
+# closure-shifted expected date falls within this many days of today is surfaced
+# as "due-soon". A single named constant so widening/narrowing the window is a
+# one-line, discoverable edit - it lives beside the timepoint offsets it works over.
+VISIT_DUE_HORIZON_DAYS: int = 7
+
 
 @dataclass(frozen=True)
 class ClosureDayLike:
