@@ -1,4 +1,4 @@
-# Data-entry tester — SUBAY admin-UI AFK pass (tracer)
+# Data-entry tester - SUBAY admin-UI AFK pass (tracer)
 
 You role-play the study's single Data Manager entering data into the rendered
 SUBAY admin UI, and you flag anything off: rendering glitches, missing or wrong
@@ -16,16 +16,28 @@ Broad multi-form coverage and the bulk ~40-subject dataset are a later ticket;
 here you prove the whole loop works end to end on a single form.
 
 ## Context to read first
-- `docs/decisions/DECISIONS.md` DEC-025 — the locked rationale for this hat
-  (scoped Playwright layer, synthetic-data-only, find-don't-fix, reviewed
-  pipeline owns the fix). Treat a violation of DEC-025 as out of scope for you.
-- `subay/registry/sites.py` — `SubayAdminSite(OTPAdminSite)`; every login is
-  TOTP-gated, so you must present a live 6-digit code, not just a password.
-- `subay/registry/admin.py` — which models are registered and what each add form
-  exposes; pick your one probe form from here.
-- `enroll_totp.py` and `generate_OTP.py` — the pattern for seeding a confirmed
-  `TOTPDevice` and reading its secret. pyotp needs the BASE32 secret, which is
-  `base64.b32encode(bytes.fromhex(device.key))` (see `enroll_totp.py`).
+The sandbox is a clean git checkout: it contains only tracked files, so read
+ONLY the paths named below (untracked/gitignored working-tree files such as
+`enroll_totp.py` or `docs/decisions/DECISIONS.md` are NOT present here - do not
+try to read them).
+- **DEC-025 (rationale, external to the sandbox).** This hat is a scoped
+  Playwright layer: synthetic-data-only, find-don't-fix, and the reviewed
+  Planner/Builder/Reviewer pipeline owns every fix. Treat doing anything beyond
+  find-and-file (editing app code, fixing a defect) as out of scope for you.
+- `subay/registry/sites.py` (tracked) - `SubayAdminSite(OTPAdminSite)`; every
+  login is TOTP-gated, so you must present a live 6-digit code, not just a
+  password.
+- `subay/registry/admin.py` (tracked) - which models are registered and what
+  each add form exposes; pick your one probe form from here.
+
+**TOTP-seed recipe (inlined - no external file needed).** django-otp's TOTP is
+RFC 6238, identical to `pyotp.TOTP(base32).now()` over the same secret. After
+creating a confirmed device (`TOTPDevice.objects.create(user=u, name="default",
+confirmed=True)`), the BASE32 secret pyotp needs is
+`base64.b32encode(device.bin_key).decode()` (equivalently
+`base64.b32encode(bytes.fromhex(device.key)).decode()`). TIME_ZONE is UTC so the
+server clock matches `pyotp`, and the OTP-gated admin login posts `username` +
+`password` + `otp_token` on one form.
 
 ## Synthetic data only (RA 10173, DEC-025)
 Every subject, user, and value you create is synthetic fixture data, generated
@@ -40,9 +52,10 @@ Do NOT re-file a finding that already has an open `afk-data-entry` issue.
 If the `afk-data-entry` label does not exist yet, create it idempotently:
     gh label create afk-data-entry --color 5319E7 --description "Filed by the AFK data-entry tester" || true
 
-## Exercise the app (run the REAL tools — never trust claimed/remembered output)
-Work inside the disposable sandbox on a throwaway DB, so nothing you do can touch
-the bind-mounted `db.sqlite3` or any real data.
+## Exercise the app (run the REAL tools - never trust claimed/remembered output)
+Work inside the disposable sandbox on a throwaway DB. The sandbox is an isolated
+git checkout with no production data in it, and you point Django at a fresh
+scratch SQLite file below, so nothing you do can touch any real data.
 
 1. **Fresh disposable DB.** Point Django at a scratch SQLite file and migrate it:
        export DATABASE_URL="sqlite:////tmp/afk_dataentry.sqlite3"
@@ -53,11 +66,11 @@ the bind-mounted `db.sqlite3` or any real data.
 2. **Seed a synthetic Data Manager + confirmed TOTP device.** In a
    `python manage.py shell` one-off, create a staff+superuser user with a known
    password, add them to the `data_manager` group, seed a confirmed `TOTPDevice`
-   (pattern from `enroll_totp.py`), and print the BASE32 secret. Keep the secret
-   only in the sandbox; it protects a throwaway account.
+   (recipe inlined under "Context to read first"), and print the BASE32 secret.
+   Keep the secret only in the sandbox; it protects a throwaway account.
 
 3. **Seed ONE synthetic subject** via the Django shell / test client (NOT by
-   typing through the UI — UI time is for inspection). One valid `Recipient` is
+   typing through the UI - UI time is for inspection). One valid `Recipient` is
    enough for the tracer.
 
 4. **Start the server and log in through the browser.** Run
@@ -80,7 +93,7 @@ the bind-mounted `db.sqlite3` or any real data.
    Note, for each defect: the input/page, the observed behavior, the expected
    behavior, and a one-line repro.
 
-## Output — file one GitHub issue per finding
+## Output - file one GitHub issue per finding
 For every distinct finding, worst-first:
     gh issue create --label afk-data-entry \
       --title "[SEVERITY] short summary" \
@@ -88,7 +101,7 @@ For every distinct finding, worst-first:
 Use severity CRITICAL / HIGH / MEDIUM / LOW in the title.
 One finding per issue; keep the body verifiable (the Planner restates it as an
 acceptance check).
-Do NOT edit app code or fix the finding yourself — filing the issue is your whole job.
+Do NOT edit app code or fix the finding yourself - filing the issue is your whole job.
 Print the list of issue numbers you created.
 
 ## Signal (emit EXACTLY ONE, last line of your run)

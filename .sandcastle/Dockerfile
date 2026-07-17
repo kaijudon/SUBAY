@@ -23,6 +23,15 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 # is not reachable at build time. They are installed at runtime instead by the
 # onSandboxReady hook in main.mts, where the repo is bind-mounted at the workspace.
 
+# Playwright's Chromium needs ~30 system shared libs (libglib, libnss, libatk, ...).
+# Install them here, as root, at build time - `playwright install-deps` shells out to
+# apt, which only works root+build-time. The onSandboxReady hook later downloads the
+# browser BINARY itself (no root needed) into the agent's cache. Baking the deps in
+# means every run launches Chromium immediately instead of re-resolving libs rootlessly.
+RUN pip install --no-cache-dir playwright \
+  && python -m playwright install-deps chromium \
+  && rm -rf /var/lib/apt/lists/*
+
 # Build-args for UID/GID alignment: sandcastle docker build-image
 # defaults these to the host user's UID/GID so image-built files
 # and bind-mounted files share an owner without runtime chown.
