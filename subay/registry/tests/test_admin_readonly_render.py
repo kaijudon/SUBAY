@@ -7,11 +7,13 @@ linebreaksbr() -- None rendered as the literal "None" and a bool as "True"/"Fals
 The admin now shadows each derived property with an @admin.display wrapper, so
 empties become a "-" placeholder and booleans render the Yes/No/unknown icon.
 """
+import inspect
 import re
 from datetime import date
 from decimal import Decimal
 
 import pytest
+from django.contrib import admin as django_admin
 from django.contrib.auth.models import User
 from django.test import Client
 from django.urls import reverse
@@ -36,9 +38,45 @@ def admin_client(db):
     return _otp_client(User.objects.create_superuser("root", "root@x", "pw"))
 
 
-def _readonly_values(html):
-    """Text inside each <div class="readonly">...</div> block."""
-    return re.findall(r'class="readonly">(.*?)</div>', html, re.S)
+# --- drift guard: every property-typed readonly/list_display field is routed ----
+# through _install_derived_displays (code-review finding #2). Without this test a
+# future derived readonly field that nobody remembers to register regresses to the
+# literal "None"/"True"/"False" bug (#16/#19) silently. The rule: if a model has a
+# name as a `property`, the admin (or inline) that exposes it must SHADOW it with a
+# callable on the admin class -- the _derived_display wrapper -- so lookup_field
+# picks the admin method over the bare property.
+
+def _admin_field_owners():
+    """Yield (label, admin_class, model, fields) for each registered admin and
+    each of its inlines. `fields` is the union of readonly_fields + list_display."""
+    for model, admin_obj in django_admin.site._registry.items():
+        admin_class = type(admin_obj)
+        fields = tuple(admin_obj.readonly_fields) + tuple(admin_obj.list_display)
+        yield (admin_class.__name__, admin_class, model, fields)
+        for inline in getattr(admin_obj, "inlines", ()):
+            in_fields = tuple(getattr(inline, "readonly_fields", ())) + tuple(
+                getattr(inline, "list_display", ())
+            )
+            yield (inline.__name__, inline, inline.model, in_fields)
+
+
+def test_property_typed_readonly_fields_are_routed_through_wrapper():
+    """Any model @property named in an admin's readonly_fields/list_display must be
+    shadowed by a callable on the admin class, not left as the bare property."""
+    offenders = set()
+    for label, admin_class, model, fields in _admin_field_owners():
+        for name in fields:
+            model_attr = inspect.getattr_static(model, name, None)
+            if not isinstance(model_attr, property):
+                continue  # real field or non-property callable -- not the bug class
+            shadow = inspect.getattr_static(admin_class, name, None)
+            if not callable(shadow) or isinstance(shadow, property):
+                offenders.add(f"{label}.{name}")
+    assert not offenders, (
+        "Derived @property readonly/list_display fields not routed through "
+        "_install_derived_displays (would regress to literal None/True/False): "
+        + ", ".join(sorted(offenders))
+    )
 
 
 # --- #16: add-form derived fields -----------------------------------------
