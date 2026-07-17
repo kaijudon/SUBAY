@@ -38,6 +38,39 @@ from .sites import SubayAdminSite  # re-exported; the class is defined in sites.
 __all__ = ["SubayAdminSite"]
 
 
+# --- Derived read-only rendering (issues #16 / #19) -----------------------
+#
+# A model @property listed in `readonly_fields` is not a real admin field, so
+# Django's AdminReadonlyField.contents() sends its value straight through
+# linebreaksbr(): None renders as the literal "None" and a bool as "True"/
+# "False", never the empty-value placeholder or the Yes/No icon. A ModelAdmin
+# method of the SAME name shadows the property in lookup_field (model_admin is
+# checked before the instance), restoring normal rendering: a "-" placeholder
+# for empty non-booleans and the three-state Yes/No/unknown icon for booleans.
+# `_install_derived_displays` attaches one wrapper per name so the admins stay
+# declarative instead of carrying ~30 near-identical stubs.
+
+def _derived_display(attr_name, *, boolean):
+    @admin.display(boolean=boolean)
+    def _wrapper(self, obj):
+        value = getattr(obj, attr_name)
+        if boolean:
+            return value  # None -> unknown icon, True/False -> Yes/No icon
+        return "-" if value is None or value == "" else value
+
+    # Keep the property's own name so labels and readonly_fields keys are unchanged.
+    _wrapper.__name__ = attr_name
+    _wrapper.__qualname__ = attr_name
+    return _wrapper
+
+
+def _install_derived_displays(admin_class, *, boolean_fields=(), plain_fields=()):
+    for name in boolean_fields:
+        setattr(admin_class, name, _derived_display(name, boolean=True))
+    for name in plain_fields:
+        setattr(admin_class, name, _derived_display(name, boolean=False))
+
+
 # --- Front-end 1 (issue #2): filters for DERIVED values ---
 #
 # risk_stratum and closure_shifted are @property (derive-don't-store), so neither
@@ -529,3 +562,42 @@ class ProtocolDeviationAdmin(SimpleHistoryAdmin):
     )
     autocomplete_fields = ("quantitative",)
     readonly_fields = ("recipient",)  # derived through the tube, never stored
+
+
+# --- Install derived read-only display wrappers (issues #16 / #19) ---------
+# Every @property that appears in a readonly_fields / list_display list above is
+# routed through _derived_display so it renders a "-" placeholder (non-boolean)
+# or the Yes/No/unknown icon (boolean) instead of literal "None"/"True"/"False".
+# severity_tier is a stored CharField, not a property, so it is left untouched.
+_install_derived_displays(
+    RecipientAdmin,
+    boolean_fields=("has_donor_serostatus_mismatch",),
+    plain_fields=("age", "risk_stratum", "cmv_episode_summary"),
+)
+_install_derived_displays(
+    RecipientVisitAdmin,
+    boolean_fields=("closure_shifted",),
+    plain_fields=("nominal_day", "closure_reason", "shift_days_from_nominal"),
+)
+_install_derived_displays(DonorAdmin, plain_fields=("baseline_serostatus",))
+_install_derived_displays(CMVSerologyAdmin, boolean_fields=("is_positive", "igm_positive"))
+_install_derived_displays(CMVSerologyInline, boolean_fields=("is_positive",))
+_install_derived_displays(CMVQuantitativeAdmin, boolean_fields=("release_overdue",))
+_install_derived_displays(CMVQuantitativeInline, boolean_fields=("release_overdue",))
+_install_derived_displays(TBNKPanelAdmin, plain_fields=("cd4_cd8_ratio",))
+_install_derived_displays(TBNKPanelInline, plain_fields=("cd4_cd8_ratio",))
+_install_derived_displays(RenalFunctionAdmin, plain_fields=("eGFR",))
+_install_derived_displays(RenalFunctionInline, plain_fields=("eGFR",))
+_install_derived_displays(MedicationCourseAdmin, plain_fields=("duration_days",))
+_install_derived_displays(HospitalizationAdmin, plain_fields=("length_of_stay_days",))
+_install_derived_displays(AliquotAdmin, plain_fields=("remaining_ul", "thaw_count"))
+_install_derived_displays(
+    GenotypingResultAdmin, plain_fields=("subject", "sample_date", "qpcr_rollup")
+)
+_install_derived_displays(QpcrDetailAdmin, plain_fields=("rollup",))
+_install_derived_displays(
+    ConcordancePairAdmin,
+    plain_fields=("suggested_concordance_call", "co_resolved_count", "comparator_subject"),
+)
+_install_derived_displays(ReleaseEventAdmin, plain_fields=("recipient",))
+_install_derived_displays(ProtocolDeviationAdmin, plain_fields=("recipient",))
