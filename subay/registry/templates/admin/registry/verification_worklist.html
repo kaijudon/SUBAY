@@ -1,0 +1,39 @@
+{% extends "admin/base_site.html" %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Home</a>
+  &rsaquo; Verification worklist
+</div>
+{% endblock %}
+
+{% block content %}
+<p>
+  Entered-but-unverified outcome-critical rows awaiting four-eyes verification.
+  Open a row to verify it; a verifier must differ from the editor.
+  <strong>{{ total }}</strong> row{{ total|pluralize }} pending.
+</p>
+
+{% for group in groups %}
+<div class="module">
+  <h2>{{ group.title }} ({{ group.rows|length }})</h2>
+  {% if group.rows %}
+  <table>
+    <thead>
+      <tr><th>Row</th><th>Entered by</th></tr>
+    </thead>
+    <tbody>
+      {% for row in group.rows %}
+      <tr>
+        <th scope="row"><a href="{{ row.url }}">{{ row.label }}</a></th>
+        <td>{{ row.entered_by|default:"-" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="help">Nothing pending. <a href="{{ group.changelist_url }}">View all</a>.</p>
+  {% endif %}
+</div>
+{% endfor %}
+{% endblock %}
