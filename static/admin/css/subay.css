@@ -101,6 +101,8 @@ body {
 /* Inline action-link icon: small, sits just before the link text. */
 .ico-action { margin-right: 0.3em; width: 0.95em; height: 0.95em; }
 
+.ico-team       { -webkit-mask-image: url("../img/icons/team.svg");            mask-image: url("../img/icons/team.svg"); }
+.ico-calendar   { -webkit-mask-image: url("../img/icons/calendar.svg");        mask-image: url("../img/icons/calendar.svg"); }
 .ico-alarm      { -webkit-mask-image: url("../img/icons/alarm-warning.svg");   mask-image: url("../img/icons/alarm-warning.svg"); }
 .ico-shield     { -webkit-mask-image: url("../img/icons/shield-check.svg");    mask-image: url("../img/icons/shield-check.svg"); }
 .ico-check      { -webkit-mask-image: url("../img/icons/check.svg");           mask-image: url("../img/icons/check.svg"); }
@@ -138,6 +140,115 @@ body {
 .app-safety          caption a.section::before { -webkit-mask-image: url("../img/icons/shield-star.svg"); mask-image: url("../img/icons/shield-star.svg"); }
 .app-review          caption a.section::before { -webkit-mask-image: url("../img/icons/shield-check.svg");mask-image: url("../img/icons/shield-check.svg"); }
 .app-administration  caption a.section::before { -webkit-mask-image: url("../img/icons/settings.svg");    mask-image: url("../img/icons/settings.svg"); }
+
+/* Admin landing dashboard (issue #16): derived tile panel above the workflow
+   grid. Pastel cards on the themed surfaces, currentColor icons - no JS, no new
+   asset. Responsive: tiles wrap; each bucket row wraps its count + label. */
+.subay-dashboard {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 0 0 22px;
+}
+.dashboard-tile {
+  flex: 1 1 260px;
+  background: var(--body-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(13, 59, 67, 0.06);
+  padding: 14px 16px 12px;
+}
+.dashboard-tile .tile-heading {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: var(--header-color);
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+}
+.tile-buckets {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.tile-bucket {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--hairline-color);
+}
+.tile-bucket .bucket-count {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--primary);
+  min-width: 2.2em;
+  text-align: right;
+  order: 2;
+}
+.tile-bucket .bucket-label {
+  color: var(--body-fg);
+  order: 1;
+}
+.dashboard-tile .tile-total {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--body-quiet-color);
+}
+/* Operational count tiles (T2/T3): one big deep-linked number + a link. */
+.tile-big-count {
+  margin: 6px 0 4px;
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.tile-big-count a { color: var(--primary); text-decoration: none; }
+.tile-big-count a:hover { text-decoration: underline; }
+.dashboard-tile .tile-link {
+  margin: 0;
+  font-size: 12px;
+}
+/* Schedule tile (T1): a bucket summary line + a compact gap list. */
+.tile-schedule-summary {
+  margin: 0 0 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sched-count {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--darkened-bg);
+  color: var(--body-fg);
+}
+.sched-overdue { background: #f6e2d8; color: #8a3d1f; }   /* soft coral */
+.sched-missed  { background: #efe3d6; color: #6b4a2a; }
+.sched-due_soon { background: var(--message-success-bg); color: var(--header-color); }
+.tile-gaps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.tile-gap {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--hairline-color);
+  display: flex;
+  flex-direction: column;
+}
+.tile-gap a { text-decoration: none; font-weight: 600; }
+.tile-gap .gap-meta { font-size: 11px; color: var(--body-quiet-color); }
+.tile-gap.gap-overdue a { color: var(--accent); }
+.dashboard-tile .tile-empty {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--body-quiet-color);
+}
 
 /* Login page: show the full SUBAY logo lockup inside the (white) login card and
    drop the header there, so the sign-in screen is a clean centred card. The
