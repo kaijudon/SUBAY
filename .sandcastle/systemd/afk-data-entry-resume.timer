@@ -1,0 +1,17 @@
+[Unit]
+# Fire the AFK data-entry tester daily at the 21:00 UTC (05:00 PHT) Claude
+# usage-limit reset - NOT a routine fixed-time kickoff. Starting the window the
+# instant the limit resets maximises the iterations it can run before the next
+# reset (T4 / #15).
+Description=Daily AFK data-entry tester resume at the 21:00 UTC usage-limit reset
+
+[Timer]
+# UTC suffix pins the fire to 21:00 UTC regardless of the box's local timezone.
+OnCalendar=*-*-* 21:00:00 UTC
+# If the box was off at 21:00 UTC, run at the next boot - a missed reset still
+# resumes (the "resume", not "fixed kickoff", intent).
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

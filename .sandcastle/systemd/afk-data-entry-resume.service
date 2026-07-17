@@ -1,0 +1,16 @@
+[Unit]
+# SUBAY AFK data-entry tester - resume one usage window (T4 / #15).
+# Oneshot: starts the local-docker pipeline, which then iterates back-to-back
+# until the Claude usage limit stops it. @REPO@ is substituted with the repo's
+# absolute path at install time by install-schedule.sh (keeps the unit portable
+# and the schedule unwind-able without touching app code).
+Description=SUBAY AFK data-entry tester - resume one usage window
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO@
+ExecStart=@REPO@/.sandcastle/run-daily-resume.sh
+# A window can run for hours (many back-to-back iterations); never time it out.
+TimeoutStartSec=0

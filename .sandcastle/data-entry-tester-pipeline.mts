@@ -1,15 +1,22 @@
 import { createSandbox, claudeCode } from "@ai-hero/sandcastle";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 
-// AFK data-entry tester driver (DEC-025). One THIN tracer iteration through the
-// whole loop: fresh disposable DB -> seeded confirmed TOTPDevice -> Playwright
-// login to the OTP-gated admin using a live pyotp code -> probe ONE admin form
-// -> file one afk-data-entry issue per finding -> emit a promise -> tear down.
+// AFK data-entry tester driver (DEC-025). Each iteration runs the whole loop:
+// fresh disposable DB -> bulk synthetic ~40-subject dataset -> seeded confirmed
+// TOTPDevice -> Playwright login to the OTP-gated admin using a live pyotp code
+// -> inspect a ROTATING subset of admin forms (T3/#14) -> file one afk-data-entry
+// issue per finding -> emit a promise -> next iteration.
 //
 // Parallel to main-pipeline.mts, but a single box.run of one hat
 // (data-entry-tester.md) instead of the Planner/Builder/Reviewer loop: this hat
-// only FINDS and FILES; the reviewed pipeline owns the fix. Nothing persists to a
-// next run - the sandbox and its scratch DB are disposable and torn down at the end.
+// only FINDS and FILES; the reviewed pipeline owns the fix. Each iteration drops
+// and re-seeds its scratch DB, so nothing carries over except the rotation
+// counter that broadens form coverage. The sandbox is disposable and torn down
+// at the end.
+//
+// Within one usage window the iterations run back-to-back with no cooldown; the
+// daily /schedule entry (T4/#15, .sandcastle/systemd/) starts a window at the
+// 21:00 UTC usage-limit reset. See .sandcastle/SCHEDULE.md.
 //
 //   npx tsx .sandcastle/data-entry-tester-pipeline.mts
 const tester = claudeCode("claude-opus-4-8", { effort: "medium" });
@@ -18,6 +25,13 @@ const tester = claudeCode("claude-opus-4-8", { effort: "medium" });
 const ALL_GREEN = "<promise>ALL_GREEN</promise>";
 const TEST_DONE = "<promise>TEST_DONE</promise>";
 const TEST_BLOCKED = "<promise>TEST_BLOCKED</promise>";
+
+// Within a usage window (the daily /schedule fire, T4/#15) iterations run
+// back-to-back with no cooldown - the Claude usage limit is what stops them, not
+// an artificial throttle. This cap is only a runaway guard set well above the
+// iterations one reset-to-reset window can afford; a window ends by hitting the
+// usage limit long before this.
+const MAX_ITERATIONS_PER_WINDOW = 250;
 
 // Fresh sandbox on the current branch. onSandboxReady installs production deps,
 // then the sandbox-only test deps (pyotp + playwright, from requirements-dev.txt,
@@ -53,7 +67,7 @@ try {
     agent: tester,
     promptFile: "./.sandcastle/data-entry-tester.md",
     completionSignal: [ALL_GREEN, TEST_DONE, TEST_BLOCKED],
-    maxIterations: 12,
+    maxIterations: MAX_ITERATIONS_PER_WINDOW,
     // Pin the log path explicitly. In head branch mode (the default for a
     // non-isolated docker sandbox) sandcastle's box.run handle path derives the
     // default log filename from an undefined `branch`, which throws in

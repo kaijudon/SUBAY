@@ -10,10 +10,11 @@ can fix it.
 This is the head of an AFK loop: after they fix and a Reviewer approves, you run
 again to re-check.
 
-This is the TRACER iteration: one complete, thin pass through every layer
-(fresh DB -> seeded TOTP -> Playwright login -> probe ONE form -> file -> signal).
-Broad multi-form coverage and the bulk ~40-subject dataset are a later ticket;
-here you prove the whole loop works end to end on a single form.
+Each iteration makes one complete pass through every layer (fresh DB -> bulk
+synthetic dataset -> seeded TOTP -> Playwright login -> inspect a ROTATING subset
+of forms -> file -> signal). The dataset is bulk-created through the ORM, and the
+subset of forms you inspect rotates every run, so UI coverage broadens across many
+iterations instead of re-checking the same form forever (ticket T3 / #14).
 
 ## Context to read first
 The sandbox is a clean git checkout: it contains only tracked files, so read
@@ -28,7 +29,11 @@ try to read them).
   login is TOTP-gated, so you must present a live 6-digit code, not just a
   password.
 - `subay/registry/admin.py` (tracked) - which models are registered and what
-  each add form exposes; pick your one probe form from here.
+  each add form exposes.
+- `.sandcastle/seed_synthetic_dataset.py` (tracked) - the bulk synthetic-dataset
+  seeder you run in step 3; it writes the form MANIFEST.
+- `.sandcastle/pick_rotation_subset.py` (tracked) - prints the rotating subset of
+  forms to inspect this iteration (step 4).
 
 **TOTP-seed recipe (inlined - no external file needed).** django-otp's TOTP is
 RFC 6238, identical to `pyotp.TOTP(base32).now()` over the same secret. After
@@ -69,11 +74,22 @@ scratch SQLite file below, so nothing you do can touch any real data.
    (recipe inlined under "Context to read first"), and print the BASE32 secret.
    Keep the secret only in the sandbox; it protects a throwaway account.
 
-3. **Seed ONE synthetic subject** via the Django shell / test client (NOT by
-   typing through the UI - UI time is for inspection). One valid `Recipient` is
-   enough for the tracer.
+3. **Bulk-seed the synthetic ~40-subject dataset** through the ORM (NOT by typing
+   through the UI - UI time is for inspection):
+       python .sandcastle/seed_synthetic_dataset.py
+   It creates ~32 Recipients + ~8 Donors with their Visit/Serology timelines
+   (all synthetic, generated fresh this iteration) and writes the form MANIFEST
+   to `/tmp/afk_manifest.json`. Confirm it prints a non-zero `SEEDED ...` line (a
+   seed failure is itself a finding - the models power the same admin forms).
 
-4. **Start the server and log in through the browser.** Run
+4. **Pick this iteration's ROTATING subset of forms:**
+       python .sandcastle/pick_rotation_subset.py 8
+   It prints up to 8 `kind<TAB>url<TAB>label` lines - a sliding window over the
+   manifest, advanced by UTC day and a per-window counter so the subset differs
+   run to run and coverage accumulates. Inspect exactly these forms this
+   iteration; do NOT walk all ~40 subjects every run.
+
+5. **Start the server and log in through the browser.** Run
    `python manage.py runserver 127.0.0.1:8000` in the background (ALLOWED_HOSTS
    already allows 127.0.0.1). Write and run a Python Playwright script
    (`playwright` + `pyotp` are installed from `requirements-dev.txt`) that:
@@ -85,12 +101,18 @@ scratch SQLite file below, so nothing you do can touch any real data.
    If login fails, that is a `<promise>TEST_BLOCKED</promise>` unless the failure
    is itself a UI defect worth filing.
 
-5. **Probe ONE admin data-entry form** (e.g. the `Recipient` or a lab add form).
-   Render it, screenshot it, and inspect for defects against the project's
-   pixel-perfection standard: fields present and labeled, required markers shown,
-   widgets rendered (no raw/broken controls), inline derived-value hints and
-   validation messages correct and legible, no obvious CSS/JS/icon breakage.
-   Note, for each defect: the input/page, the observed behavior, the expected
+6. **Inspect EACH form in the rotating subset from step 4** (navigate to each
+   printed `url`). Render it, screenshot it, and inspect for defects against the
+   project's pixel-perfection standard:
+   - fields present and labeled; required markers shown on required fields;
+   - widgets rendered (no raw/broken controls), FK dropdowns populated;
+   - inline derived-value hints and help text correct and legible;
+   - no obvious CSS/JS/icon breakage or overflow.
+   For an `add` form, also submit it EMPTY once and confirm the validation
+   messages render correctly and name the right required fields (do not submit
+   real-looking values - you are checking the message, not creating data). For a
+   `change` form, confirm the seeded values load into the widgets.
+   Note, for each defect: the form url, the observed behavior, the expected
    behavior, and a one-line repro.
 
 ## Output - file one GitHub issue per finding
@@ -105,7 +127,7 @@ Do NOT edit app code or fix the finding yourself - filing the issue is your whol
 Print the list of issue numbers you created.
 
 ## Signal (emit EXACTLY ONE, last line of your run)
-- All checks green, form renders correctly, no new finding: `<promise>ALL_GREEN</promise>`.
+- All checks green, every inspected form renders correctly, no new finding: `<promise>ALL_GREEN</promise>`.
 - One or more issues filed: `<promise>TEST_DONE</promise>`.
 - Could not run the tools or reach GitHub (sandbox, server, Playwright, or `gh`
   unusable): `<promise>TEST_BLOCKED</promise>` with a one-line reason.
