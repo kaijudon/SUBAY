@@ -46,6 +46,41 @@ class SubayAdminSite(OTPAdminSite):
     site_header = "SUBAY"
     site_title = "SUBAY"
     index_title = "Surveillance & Unified Bioarchive for Antiviral nephrologY"
+    # Custom landing template: renders the derived dashboard tile panel above the
+    # stock workflow-section grid, then falls through to it. A distinct name (not
+    # admin/index.html) so the template can `{% extends "admin/index.html" %}` the
+    # contrib default without shadowing itself.
+    index_template = "admin/subay_index.html"
+
+    def _dashboard_tiles(self, request):
+        """Assemble the per-tile context for the landing dashboard. Each tile is
+        individually permission-gated on the Django permission for the action it
+        drives (perm-not-group-name, matching the worklists above); a tile whose
+        gate is false is omitted, and when every tile is omitted the panel does
+        not render. All tile logic lives in `dashboard.py`, never here."""
+        from . import dashboard
+
+        tiles = []
+        # Operational group first (actionable counts), study-progress last.
+        # T1 - visits due/overdue. Gate: add permission for recipient-visit (the
+        # add-form each gap deep-links to), perm-not-group-name.
+        if request.user.has_perm("registry.add_recipientvisit"):
+            tiles.append(dashboard.visits_due())
+        # T2 - unverified outcome-critical. Gate: existing can-verify check.
+        if self._can_verify(request):
+            tiles.append(dashboard.unverified_count())
+        # T3 - release-overdue QNAT. Gate: existing can-monitor-safety check.
+        if self._can_monitor_safety(request):
+            tiles.append(dashboard.release_overdue_count())
+        # T4 - CONSORT recipient counts (study-progress). Gate: view recipient.
+        if request.user.has_perm("registry.view_recipient"):
+            tiles.append(dashboard.consort_counts())
+        return tiles
+
+    def index(self, request, extra_context=None):
+        extra_context = dict(extra_context or {})
+        extra_context["dashboard_tiles"] = self._dashboard_tiles(request)
+        return super().index(request, extra_context)
 
     def _section(self, name, models):
         return {

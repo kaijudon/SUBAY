@@ -1,0 +1,14 @@
+# Sandbox-only test dependencies for the AFK data-entry tester
+# (.sandcastle/data-entry-tester.md, DEC-025). These are installed ONLY inside
+# the disposable .sandcastle sandbox by data-entry-tester-pipeline.mts's
+# onSandboxReady hook -- never on the production box. Keep them OUT of
+# requirements.txt (what deploy/subay.service installs).
+
+# pyotp: compute the live 6-digit TOTP code from a seeded device secret so the
+# unattended Playwright login can pass the OTP-gated SubayAdminSite without a human.
+pyotp>=2.9
+
+# playwright: drive the real rendered admin UI in a browser to catch rendering /
+# field defects the SQLite pytest suite structurally cannot see. Needs a one-time
+# browser-binary install (`playwright install chromium`) in the sandbox bring-up.
+playwright>=1.48

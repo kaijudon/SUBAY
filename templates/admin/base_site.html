@@ -1,5 +1,11 @@
 {% extends "admin/base.html" %}
-{% load static %}
+{% load static i18n %}
+
+{# contrib's base.html leaves <title> empty and expects each base_site.html to
+   fill it; this project's override previously omitted the block, so every admin
+   page shipped a blank <title></title> (issue #18). Mirror contrib's format,
+   defaulting the site title to "SUBAY". #}
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title|default:_('SUBAY') }}{% endblock %}
 
 {% block extrastyle %}{{ block.super }}<link rel="stylesheet" href="{% static 'admin/css/subay.css' %}">{% endblock %}
 
