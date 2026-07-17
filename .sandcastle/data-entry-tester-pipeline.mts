@@ -9,7 +9,7 @@ import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 // Parallel to main-pipeline.mts, but a single box.run of one hat
 // (data-entry-tester.md) instead of the Planner/Builder/Reviewer loop: this hat
 // only FINDS and FILES; the reviewed pipeline owns the fix. Nothing persists to a
-// next run — the sandbox and its scratch DB are disposable and torn down at the end.
+// next run - the sandbox and its scratch DB are disposable and torn down at the end.
 //
 //   npx tsx .sandcastle/data-entry-tester-pipeline.mts
 const tester = claudeCode("claude-opus-4-8", { effort: "medium" });
@@ -22,7 +22,7 @@ const TEST_BLOCKED = "<promise>TEST_BLOCKED</promise>";
 // Fresh sandbox on the current branch. onSandboxReady installs production deps,
 // then the sandbox-only test deps (pyotp + playwright, from requirements-dev.txt,
 // T1/#12), then the Chromium browser binary Playwright drives. requirements.txt
-// stays untouched — these never reach the production box.
+// stays untouched - these never reach the production box.
 const box = await createSandbox({
   sandbox: docker({ imageName: "docker.io/library/sandcastle:subay_final" }),
   hooks: {
@@ -30,7 +30,10 @@ const box = await createSandbox({
       onSandboxReady: [
         { command: "pip install --no-cache-dir -r requirements.txt" },
         { command: "pip install --no-cache-dir -r requirements-dev.txt" },
-        { command: "python -m playwright install --with-deps chromium" },
+        // Browser binary only - no --with-deps: the system libs are baked into the
+        // image as root (see .sandcastle/Dockerfile); --with-deps would re-shell to
+        // apt as the non-root agent user and fail.
+        { command: "python -m playwright install chromium" },
       ],
     },
   },
@@ -40,7 +43,7 @@ async function teardown(): Promise<void> {
   try {
     await box.close();
   } catch {
-    /* ignore close errors — the sandbox is disposable either way */
+    /* ignore close errors - the sandbox is disposable either way */
   }
 }
 
@@ -51,11 +54,16 @@ try {
     promptFile: "./.sandcastle/data-entry-tester.md",
     completionSignal: [ALL_GREEN, TEST_DONE, TEST_BLOCKED],
     maxIterations: 12,
+    // Pin the log path explicitly. In head branch mode (the default for a
+    // non-isolated docker sandbox) sandcastle's box.run handle path derives the
+    // default log filename from an undefined `branch`, which throws in
+    // buildLogFilename; supplying `logging` skips that derivation entirely.
+    logging: { type: "file", path: "./.sandcastle/logs/data-entry-tester.log" },
   });
 
   const signal = run.completionSignal;
   if (signal === ALL_GREEN) {
-    console.log("OK: admin data-entry UI green — no finding filed.");
+    console.log("OK: admin data-entry UI green - no finding filed.");
   } else if (signal === TEST_DONE) {
     console.log("OK: iteration filed one or more afk-data-entry issues.");
   } else if (signal === TEST_BLOCKED) {
