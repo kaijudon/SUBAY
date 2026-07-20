@@ -151,9 +151,12 @@ git diff --name-only HEAD@{1} HEAD | grep -q environment.yml && \
 **4. Migrate the safe way — never bare `manage.py migrate` on prod.**
 
 ```sh
-set -a; source <(sudo cat /etc/subay/subay.env); set +a
-sudo -E deploy/bin/safe-migrate.sh
+sudo bash -c 'set -a; . /etc/subay/subay.env; set +a; exec deploy/bin/safe-migrate.sh'
 ```
+
+(A hardened sudoers with `env_reset` and no `SETENV` silently ignores `sudo -E`, so
+the older "load env, then `sudo -E`" form left `DATABASE_URL` unset. The one-liner
+above runs a root shell that reads the root-only env file itself — nothing to preserve.)
 
 `safe-migrate.sh` (§3) dumps the DB first, prints the plan, and rehearses any data/destructive migration on a throwaway scratch DB restored from that dump before it touches prod.
 If it reports **model/migration drift**, stop: the committed migrations do not match the models.
