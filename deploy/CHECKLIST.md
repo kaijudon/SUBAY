@@ -121,6 +121,12 @@ set -a; source <(sudo cat /etc/subay/subay.env); set +a
       gpg --import subay-backup-public.asc
       ```
       **Verify:** `gpg --list-keys subay-backup@spmc.local` shows the key; `gpg --list-secret-keys` on the box shows **nothing** for it.
+- [ ] Recreate the sandbox dirs on every boot so the backup/history-export units can build their ProtectSystem=strict namespace (a missing ReadWritePaths= dir kills them at status=226/NAMESPACE). This supersedes the ad-hoc `install -d` steps above.
+      ```sh
+      sudo cp deploy/systemd/tmpfiles.d/subay.conf /etc/tmpfiles.d/subay.conf
+      sudo systemd-tmpfiles --create /etc/tmpfiles.d/subay.conf   # create now, not just next boot
+      ```
+      **Verify:** `/var/lib/subay` (root) and `/var/backups/subay{,/history}` (subay) exist with mode 700.
 - [ ] Install and schedule the nightly backup.
       ```sh
       sudo cp deploy/systemd/subay-backup.{service,timer} /etc/systemd/system/
