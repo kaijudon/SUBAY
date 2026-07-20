@@ -4,8 +4,9 @@
 # Use this INSTEAD of `manage.py migrate` on the production box. Run as root so it
 # can create the scratch DB via the postgres superuser:
 #     cd /opt/subay
-#     set -a; source <(sudo cat /etc/subay/subay.env); set +a
-#     sudo -E deploy/bin/safe-migrate.sh
+#     sudo bash -c 'set -a; . /etc/subay/subay.env; set +a; exec deploy/bin/safe-migrate.sh'
+# (a root shell reads the root-only env file itself; `sudo -E` is dropped by hardened
+#  sudoers with env_reset/no-SETENV, which would leave DATABASE_URL unset.)
 #
 # Acceptance (issue 15): "pg_dump before every migrate, applies additive migrations
 # directly, and rehearses RunPython/destructive migrations on a scratch DB first."
@@ -32,7 +33,7 @@ BACKUP_DIR="${SUBAY_MIGRATE_BACKUPS:-/var/backups/subay/pre-migrate}"
 PG_SUPERUSER="${SUBAY_PG_SUPERUSER:-postgres}"   # OS user for peer-auth admin ops
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
 
-[[ -n "${DATABASE_URL:-}" ]] || { echo "DATABASE_URL not set — load the env file, run with sudo -E." >&2; exit 1; }
+[[ -n "${DATABASE_URL:-}" ]] || { echo "DATABASE_URL not set — run: sudo bash -c 'set -a; . /etc/subay/subay.env; set +a; exec deploy/bin/safe-migrate.sh'" >&2; exit 1; }
 
 # App DB name and role, parsed from postgres://role:pass@host:port/dbname[?...]
 DB_NAME="$(printf '%s' "$DATABASE_URL"  | sed -E 's#.*/([^/?]+)(\?.*)?$#\1#')"
@@ -118,7 +119,11 @@ if [[ "$NEEDS_REHEARSAL" -eq 1 ]]; then
     # shellcheck disable=SC2064
     trap "sudo -u '$PG_SUPERUSER' dropdb --if-exists '$SCRATCH_DB'" EXIT
     # Restore + migrate AS THE APP ROLE (its own credentials), so ownership matches prod.
-    pg_restore --no-owner --dbname="$SCRATCH_URL" "$DUMP"
+    # --no-acl: skip GRANTs and ALTER DEFAULT PRIVILEGES. The app role is not superuser
+    # (§7 least-privilege), so it cannot replay the postgres-owned default privileges in
+    # the dump — those would error and, under `set -e`, abort an otherwise-fine rehearsal.
+    # ACLs are irrelevant to a throwaway scratch DB; a real schema/data fault still aborts.
+    pg_restore --no-owner --no-acl --dbname="$SCRATCH_URL" "$DUMP"
     DATABASE_URL="$SCRATCH_URL" "$PYTHON" "$MANAGE" migrate --no-input
     echo "    rehearsal succeeded — the plan applies cleanly on real data."
     sudo -u "$PG_SUPERUSER" dropdb --if-exists "$SCRATCH_DB"
