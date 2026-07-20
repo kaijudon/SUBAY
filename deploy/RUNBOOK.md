@@ -122,7 +122,17 @@ Do the steps in order.
 
 ```sh
 sudo systemctl start subay-backup.service
+systemctl is-active subay-backup.service    # -> active, i.e. the oneshot succeeded
 ```
+
+Do **not** proceed on a failed backup — you would be migrating with no rollback point. Two failure modes to know:
+
+- **`Dependency failed` / mount error.** The off-machine backup drive (Drive 1) is not plugged in — the unit's `RequiresMountsFor=/mnt/subay-backup` refuses to run rather than write to the local disk. Plug in the drive, confirm `findmnt /mnt/subay-backup`, and retry.
+- **`status=226/NAMESPACE`, "No such file or directory".** A `ReadWritePaths=` dir the sandbox needs is missing (`/var/lib/subay`, `/var/backups/subay`). The durable fix is the `tmpfiles.d` unit that recreates them on every boot — install it once and retry:
+  ```sh
+  sudo cp deploy/systemd/tmpfiles.d/subay.conf /etc/tmpfiles.d/subay.conf
+  sudo systemd-tmpfiles --create /etc/tmpfiles.d/subay.conf
+  ```
 
 **2. Pull the new code.**
 
