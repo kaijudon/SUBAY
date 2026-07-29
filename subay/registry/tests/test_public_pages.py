@@ -118,9 +118,23 @@ def test_protocol_quotes_the_real_assay_constants(client):
     body = client.get(reverse("public:protocol")).content.decode()
     assert str(CMVQuantitative.LOD) in body
     assert CMVQuantitative.ASSAY in body
-    assert str(CMVSerology.POSITIVE_THRESHOLD) in body
     assert f"{safety.RELEASE_THRESHOLD_IU_ML:,.0f}" in body
     assert str(int(safety.RELEASE_WINDOW.total_seconds() // 3600)) in body
+
+
+@pytest.mark.django_db
+def test_protocol_publishes_no_serology_cutoff_while_the_ranges_are_stale(client):
+    """The SPMC advisory of 2026-06-03 superseded CMVSerology.POSITIVE_THRESHOLD
+    and the model has not caught up (DEC-029, prd/issues/17). Until it does, the
+    page must publish no serology cutoff at all — a stale clinical threshold on
+    an unauthenticated page is the one figure here a clinician might act on.
+
+    This test is the tripwire for slice 17: adopting the new ranges should make
+    it fail, at which point it is replaced by an assertion on the new constants.
+    """
+    body = client.get(reverse("public:protocol")).content.decode()
+    assert "under revision" in body
+    assert f"{CMVSerology.POSITIVE_THRESHOLD} AU/mL" not in body
 
 
 @pytest.mark.django_db

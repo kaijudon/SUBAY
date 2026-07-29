@@ -20,7 +20,6 @@ from django.urls import reverse
 from . import safety
 from .models import (
     CMVQuantitative,
-    CMVSerology,
     Recipient,
     RecipientVisit,
     VISIT_SHIFT_CAP_DAYS,
@@ -203,12 +202,21 @@ def _assays():
             "series stays honest about what the assay could see.",
         },
         {
+            # No cutoff is published here on purpose. The SPMC Transplant
+            # Immunology Unit advisory of 2026-06-03 superseded the single 2.0
+            # AU/mL threshold this model still applies (DEC-016), and the model
+            # has not been updated yet — see DEC-029 and prd/issues/17. The page
+            # derives its figures from the model's constants so the two can never
+            # disagree; that same guarantee means it must publish nothing rather
+            # than publish a cutoff now known to be stale.
             "name": "CMV serology",
-            "cutoff": f"cutoff {CMVSerology.POSITIVE_THRESHOLD} AU/mL",
-            "body": "IgG and IgM channels at one cutoff for the whole study. The "
-            "donor's baseline draw derives the pair's serostatus, which is "
-            "cross-checked against the status recorded at transplant and flagged "
-            "— never overwritten — when the two disagree.",
+            "cutoff": "under revision",
+            "body": "IgG and IgM channels. The donor's baseline draw derives the pair's "
+            "serostatus, which is cross-checked against the status recorded at "
+            "transplant and flagged — never overwritten — when the two disagree. "
+            "The reference ranges are being updated to the laboratory's "
+            "second-generation assay; ask the data manager for the values in "
+            "force for a given draw.",
         },
         {
             "name": "Release timeliness",
