@@ -1,0 +1,39 @@
+/* ===========================================================================
+   SUBAY icon masks — the Aiko set, painted with currentColor.
+   ---------------------------------------------------------------------------
+   Shared by the admin reskin and the public pages so a glyph is named once.
+   Masking (rather than <img>) is what lets a single monochrome SVG inherit the
+   colour of whatever it sits in — a teal card icon and a white header icon are
+   the same file.
+
+   The SVGs live under static/admin/img/icons/ for historical reasons; paths
+   below are relative to THIS file (static/subay/css/).
+   =========================================================================== */
+
+.ico {
+  display: inline-block;
+  width: 1em; height: 1em;
+  vertical-align: -0.15em;
+  background-color: currentColor;
+  -webkit-mask: center / contain no-repeat;
+  mask: center / contain no-repeat;
+}
+.ico-title { width: 1.15em; height: 1.15em; vertical-align: -0.18em; margin-right: .45em; color: var(--subay-teal-600); }
+.ico-action { margin-right: .3em; width: .95em; height: .95em; }
+
+.ico-team     { -webkit-mask-image: url("../../admin/img/icons/team.svg");            mask-image: url("../../admin/img/icons/team.svg"); }
+.ico-calendar { -webkit-mask-image: url("../../admin/img/icons/calendar.svg");        mask-image: url("../../admin/img/icons/calendar.svg"); }
+.ico-alarm    { -webkit-mask-image: url("../../admin/img/icons/alarm-warning.svg");   mask-image: url("../../admin/img/icons/alarm-warning.svg"); }
+.ico-shield   { -webkit-mask-image: url("../../admin/img/icons/shield-check.svg");    mask-image: url("../../admin/img/icons/shield-check.svg"); }
+.ico-check    { -webkit-mask-image: url("../../admin/img/icons/check.svg");           mask-image: url("../../admin/img/icons/check.svg"); }
+.ico-warning  { -webkit-mask-image: url("../../admin/img/icons/error-warning.svg");   mask-image: url("../../admin/img/icons/error-warning.svg"); }
+.ico-ok       { -webkit-mask-image: url("../../admin/img/icons/checkbox-circle.svg"); mask-image: url("../../admin/img/icons/checkbox-circle.svg"); }
+.ico-flask    { -webkit-mask-image: url("../../admin/img/icons/flask.svg");           mask-image: url("../../admin/img/icons/flask.svg"); }
+.ico-database { -webkit-mask-image: url("../../admin/img/icons/database.svg");        mask-image: url("../../admin/img/icons/database.svg"); }
+.ico-code     { -webkit-mask-image: url("../../admin/img/icons/code.svg");            mask-image: url("../../admin/img/icons/code.svg"); }
+
+/* Two glyphs carry a fixed meaning wherever they appear, so the colour rides
+   with the class rather than being re-picked per screen. Declared AFTER the
+   mask rules above so the colour is not reset by them. */
+.ico-warning { color: var(--subay-coral-600); }
+.ico-ok      { color: var(--subay-teal-600); }
