@@ -1,0 +1,495 @@
+/* ===========================================================================
+   SUBAY public surface — landing, protocol summary, sign-in.
+   ---------------------------------------------------------------------------
+   The three screens a person sees BEFORE they are authenticated. Same tokens as
+   the admin reskin (static/subay/css/tokens.css), different layout vocabulary:
+   these pages are read once and scanned, so they get display type, generous
+   measure and full-bleed panels; the admin gets density.
+
+   No JS. Nothing here is behind a permission check, so nothing here may render
+   a subject identifier — the aggregate counters on the landing page are
+   deliberately study-level.
+   =========================================================================== */
+
+@import url("../../subay/css/tokens.css");
+@import url("../../subay/css/icons.css");
+
+/* ------------------------------------------------------------------ BASE -- */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body.subay-public {
+  margin: 0;
+  background: var(--subay-surface-2);
+  color: var(--subay-ink);
+  font-family: var(--subay-font-ui);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* :not(.btn) matters. `.subay-public a` outweighs `.btn-primary` on specificity,
+   so without it every anchor-shaped button was repainted teal-on-teal — the
+   label vanished into its own background. Buttons own their colour below. */
+.subay-public a:not(.btn) { color: var(--subay-teal-600); text-decoration: none; }
+.subay-public a:not(.btn):hover { color: var(--subay-teal-700); text-decoration: underline; text-underline-offset: 3px; }
+
+.subay-public h1, .subay-public h2 { text-wrap: balance; }
+.subay-public p { text-wrap: pretty; }
+
+/* Visible focus everywhere — a keyboard-only coordinator must never lose the
+   caret on a page with this little chrome. */
+.subay-public :focus-visible {
+  outline: 2px solid var(--subay-teal-600);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  background: var(--subay-surface);
+  border: 1px solid var(--subay-line-strong);
+  border-radius: 0 0 8px 0;
+  padding: 10px 16px;
+  font-size: 13px;
+  z-index: 10;
+}
+.skip-link:focus { left: 0; }
+
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 40px; }
+.wrap-narrow { max-width: 960px; margin: 0 auto; padding: 0 40px; }
+
+/* ------------------------------------------------------------ TOP NAV ----- */
+
+.topnav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 40px;
+  border-bottom: 1px solid var(--subay-line);
+  background: var(--subay-surface-2);
+  flex-wrap: wrap;
+}
+.topnav .mark {
+  width: 24px; height: 24px;
+  flex: 0 0 24px;
+  border-radius: 7px;
+  background: var(--subay-teal-600);
+  display: flex; align-items: center; justify-content: center;
+}
+.topnav .mark .ico { width: 14px; height: 14px; color: #fff; }
+/* Typed with the element so it outweighs the generic link colour: the wordmark
+   is branding, not a link that should read as teal. */
+.topnav a.wordmark { font-size: 15px; font-weight: 600; letter-spacing: .02em; color: var(--subay-ink); }
+.topnav a.wordmark:hover { text-decoration: none; color: var(--subay-ink); }
+.topnav .navlinks { display: flex; gap: 22px; margin-left: 22px; }
+.topnav .navlinks a { font-size: 13px; color: var(--subay-ink-2); }
+.topnav .navactions { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+
+/* ------------------------------------------------------------- BUTTONS ---- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  height: 36px;
+  padding: 0 15px;
+  border-radius: 8px;
+  border: 1px solid var(--subay-line-strong);
+  background: var(--subay-surface);
+  color: var(--subay-ink);
+  cursor: pointer;
+}
+a.btn { text-decoration: none; }
+.btn:hover { text-decoration: none; border-color: var(--subay-ink-3); }
+.btn-primary {
+  border-color: var(--subay-teal-600);
+  background: var(--subay-teal-600);
+  color: #fff;
+}
+.btn-primary:hover { background: var(--subay-teal-700); border-color: var(--subay-teal-700); color: #fff; }
+.btn-lg { height: 44px; padding: 0 22px; font-size: 14px; border-radius: 10px; }
+.btn-block { width: 100%; }
+
+/* --------------------------------------------------------------- HERO ----- */
+
+.hero { padding: 88px 0 72px; }
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--subay-teal-100);
+  color: var(--subay-teal-700);
+  margin-bottom: 26px;
+}
+.eyebrow .dot { width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
+
+.display {
+  font-family: var(--subay-font-display);
+  font-weight: 400;
+  font-size: clamp(42px, 6vw, 76px);
+  line-height: 1.02;
+  letter-spacing: -.02em;
+  margin: 0 0 26px;
+  max-width: 18ch;
+}
+.lede {
+  font-size: 18px;
+  line-height: 1.6;
+  color: var(--subay-ink-2);
+  max-width: 62ch;
+  margin: 0 0 34px;
+}
+.hero-actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 64px; }
+.hero-actions .note { font-size: 12px; color: var(--subay-ink-3); }
+
+/* ---------------------------------------------------------- STAT STRIP ---- */
+
+/* 200px, not 220px: the protocol page's measure is 880px inside .wrap-narrow,
+   and at 220px the four counters broke 3-up and left a hollow fourth cell. */
+.stat-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  border: 1px solid var(--subay-line);
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--subay-surface);
+  margin-bottom: 64px;
+}
+.stat {
+  padding: 24px 26px;
+  border-right: 1px solid var(--subay-line);
+  border-bottom: 1px solid var(--subay-line);
+}
+.stat .n {
+  font-family: var(--subay-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 34px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -.03em;
+  margin-bottom: 9px;
+}
+.stat .label { font-size: 13px; color: var(--subay-ink-3); line-height: 1.5; }
+
+/* ------------------------------------------------------- FEATURE CARDS ---- */
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+  margin-bottom: 64px;
+}
+.card {
+  background: var(--subay-surface);
+  border: 1px solid var(--subay-line);
+  border-radius: 16px;
+  padding: 26px 28px;
+}
+.card .card-icon {
+  width: 34px; height: 34px;
+  border-radius: 10px;
+  background: var(--subay-sunken);
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 16px;
+  color: var(--subay-teal-600);
+}
+.card .card-icon .ico { width: 17px; height: 17px; }
+.card h3 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
+.card p { font-size: 13px; line-height: 1.65; color: var(--subay-ink-2); margin: 0; }
+
+/* ------------------------------------------------------- INVERTED PANEL --- */
+
+.panel {
+  background: var(--subay-panel-dark);
+  border-radius: 20px;
+  padding: 52px 48px;
+  color: var(--subay-on-panel);
+  margin-bottom: 64px;
+}
+.panel .panel-eyebrow {
+  font-size: 11px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--subay-on-panel-3);
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+.panel h2 {
+  font-family: var(--subay-font-display);
+  font-weight: 400;
+  font-size: 38px;
+  line-height: 1.12;
+  margin: 0 0 16px;
+  max-width: 18ch;
+}
+.panel p { font-size: 14px; line-height: 1.7; color: var(--subay-on-panel-2); margin: 0; max-width: 52ch; }
+.panel-split { display: flex; gap: 56px; flex-wrap: wrap; align-items: flex-start; }
+.panel-split > .panel-copy { flex: 1 1 320px; min-width: 300px; }
+
+.codeblock {
+  flex: 0 1 420px;
+  min-width: 300px;
+  background: var(--subay-panel-code);
+  border: 1px solid var(--subay-panel-line);
+  border-radius: 14px;
+  padding: 20px 22px;
+  font-family: var(--subay-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  line-height: 1.9;
+  overflow-x: auto;
+}
+.codeblock .fname { color: var(--subay-on-panel-3); }
+.codeblock .rule { height: 1px; background: var(--subay-panel-line); margin: 10px 0; }
+.codeblock .head { color: var(--subay-on-panel-2); }
+.codeblock .row { color: var(--subay-on-panel); white-space: pre; }
+.codeblock .day { color: #45bca8; }
+
+.panel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 26px 40px; }
+.panel-grid h3 { font-size: 15px; font-weight: 600; margin: 0 0 7px; color: var(--subay-on-panel); }
+.panel-grid p { font-size: 13px; line-height: 1.65; color: var(--subay-on-panel-2); }
+
+/* -------------------------------------------------------------- FOOTER ---- */
+
+.site-footer {
+  border-top: 1px solid var(--subay-line);
+  padding: 26px 40px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  background: var(--subay-surface);
+  font-size: 12px;
+  color: var(--subay-ink-3);
+}
+.site-footer .right { margin-left: auto; }
+
+/* ------------------------------------------------------------ PROTOCOL ---- */
+
+.doc-head { padding: 56px 0 0; }
+.doc-eyebrow {
+  display: inline-block;
+  font-size: 11px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--subay-ink-3);
+  font-weight: 600;
+  margin-bottom: 18px;
+}
+.doc-head .display { font-size: clamp(36px, 5vw, 58px); max-width: 24ch; }
+.doc-head .lede { font-size: 17px; line-height: 1.65; max-width: 66ch; margin-bottom: 14px; }
+.doc-note { font-size: 13px; color: var(--subay-ink-3); line-height: 1.6; max-width: 66ch; margin: 0 0 48px; }
+
+section.doc { margin-bottom: 56px; }
+section.doc > h2 {
+  font-family: var(--subay-font-display);
+  font-weight: 400;
+  font-size: 32px;
+  margin: 0 0 8px;
+}
+section.doc > .section-note {
+  font-size: 14px;
+  color: var(--subay-ink-3);
+  line-height: 1.65;
+  max-width: 62ch;
+  margin: 0 0 22px;
+}
+
+.spine {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid var(--subay-line);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--subay-surface);
+  text-align: left;
+}
+.spine th {
+  font-size: 10px;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+  color: var(--subay-ink-3);
+  font-weight: 600;
+  background: var(--subay-surface-2);
+  border-bottom: 1px solid var(--subay-line);
+  padding: 11px 20px;
+}
+.spine td { padding: 13px 20px; border-bottom: 1px solid var(--subay-line-soft); font-size: 13px; color: var(--subay-ink-2); line-height: 1.55; vertical-align: baseline; }
+.spine tr:last-child td { border-bottom: none; }
+.spine .mono { font-family: var(--subay-font-mono); font-variant-numeric: tabular-nums; color: var(--subay-ink); }
+.spine .mono-quiet { font-family: var(--subay-font-mono); font-variant-numeric: tabular-nums; color: var(--subay-ink-3); }
+.table-scroll { overflow-x: auto; }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
+.tile {
+  background: var(--subay-surface);
+  border: 1px solid var(--subay-line);
+  border-radius: 14px;
+  padding: 20px 22px;
+}
+.tile-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.tile-head .name { font-size: 14px; font-weight: 600; color: var(--subay-ink); }
+.tile-head .n { margin-left: auto; font-family: var(--subay-font-mono); font-variant-numeric: tabular-nums; font-size: 12px; color: var(--subay-ink-3); }
+.tile p { font-size: 13px; line-height: 1.6; color: var(--subay-ink-2); margin: 0; }
+.tile .cut { font-family: var(--subay-font-mono); font-size: 13px; color: var(--subay-teal-600); margin-bottom: 9px; }
+.tile h3 { font-size: 14px; font-weight: 600; margin: 0 0 6px; }
+
+/* Status pills — the same three meanings as the admin, same colours. */
+.pill {
+  font-family: var(--subay-font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.pill-high { background: var(--subay-coral-100); color: var(--subay-coral-700); }
+.pill-intermediate { background: var(--subay-amber-100); color: var(--subay-amber-700); }
+.pill-low { background: var(--subay-teal-100); color: var(--subay-teal-700); }
+.pill-none { background: var(--subay-sunken); color: var(--subay-ink-3); }
+
+/* ---------------------------------------------------------- AUTH SCREEN --- */
+
+body.subay-auth { min-height: 100vh; }
+.auth {
+  display: flex;
+  min-height: 100vh;
+  align-items: stretch;
+}
+.auth-rail {
+  flex: 0 0 46%;
+  max-width: 620px;
+  background: var(--subay-panel-dark);
+  color: var(--subay-on-panel);
+  padding: 52px;
+  display: flex;
+  flex-direction: column;
+}
+.auth-rail .mark { width: 24px; height: 24px; border-radius: 7px; background: #45bca8; display: flex; align-items: center; justify-content: center; }
+.auth-rail .mark .ico { width: 14px; height: 14px; color: #06201c; }
+.auth-rail .brand { display: flex; align-items: center; gap: 10px; margin-bottom: auto; }
+.auth-rail .brand .wordmark { font-size: 15px; font-weight: 600; letter-spacing: .02em; }
+.auth-rail .pitch { max-width: 34ch; }
+.auth-rail .pitch h2 {
+  font-family: var(--subay-font-display);
+  font-weight: 400;
+  font-size: 42px;
+  line-height: 1.1;
+  margin: 0 0 18px;
+}
+.auth-rail .pitch p { font-size: 14px; line-height: 1.7; color: var(--subay-on-panel-2); margin: 0; }
+.auth-rail .credit { margin-top: auto; padding-top: 32px; font-size: 12px; color: #5e736e; }
+
+.auth-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  padding: 48px;
+  background: var(--subay-surface-2);
+}
+.auth-form { width: 388px; max-width: 100%; margin: auto; }
+.auth-form h1 { font-size: 26px; font-weight: 600; letter-spacing: -.01em; margin: 0 0 8px; }
+.auth-form .sub { font-size: 13px; color: var(--subay-ink-3); line-height: 1.6; margin: 0 0 28px; }
+.auth-form .back { font-size: 12px; display: inline-block; margin-bottom: 18px; }
+
+.field { margin-bottom: 16px; }
+.field > label { display: block; font-size: 12px; font-weight: 500; color: var(--subay-ink-2); margin-bottom: 6px; }
+.field input {
+  font: inherit;
+  font-size: 14px;
+  width: 100%;
+  height: 42px;
+  padding: 0 13px;
+  border: 1px solid var(--subay-line-strong);
+  border-radius: 9px;
+  background: var(--subay-surface);
+  color: var(--subay-ink);
+}
+.field select {
+  font: inherit;
+  font-size: 14px;
+  width: 100%;
+  height: 42px;
+  padding: 0 10px;
+  border: 1px solid var(--subay-line-strong);
+  border-radius: 9px;
+  background: var(--subay-surface);
+  color: var(--subay-ink);
+}
+.field input:focus, .field select:focus {
+  border-color: var(--subay-teal-600);
+  box-shadow: 0 0 0 3px var(--subay-teal-100);
+  outline: none;
+}
+/* The token is read off a phone and typed back — give it the same monospace
+   treatment as every other number in the system, and a wide tracking so a
+   transposed digit is visible. */
+.field-token input {
+  font-family: var(--subay-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 22px;
+  letter-spacing: .38em;
+  text-align: center;
+  height: 58px;
+  padding-left: .38em;   /* re-centre: tracking adds a phantom gap on the right */
+}
+.field .field-help { font-size: 12px; color: var(--subay-ink-3); line-height: 1.55; margin: 6px 0 0; }
+
+.errornote, .errorlist {
+  background: var(--subay-coral-100);
+  border: 1px solid #e7c9c1;
+  color: var(--subay-coral-700);
+  border-radius: 10px;
+  padding: 11px 14px;
+  font-size: 13px;
+  line-height: 1.55;
+  margin: 0 0 18px;
+  list-style: none;
+}
+.errorlist { margin: 0 0 8px; }
+.errorlist li + li { margin-top: 4px; }
+
+.aside {
+  background: var(--subay-surface);
+  border: 1px solid var(--subay-line);
+  border-radius: 12px;
+  padding: 15px 17px;
+  margin-top: 22px;
+}
+.aside .aside-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; font-weight: 600; color: var(--subay-ink-2); }
+.aside .aside-head .ico { color: var(--subay-ink-3); width: 15px; height: 15px; }
+.aside p { font-size: 12px; line-height: 1.65; color: var(--subay-ink-3); margin: 0; }
+.aside code { font-family: var(--subay-font-mono); font-size: 11.5px; background: var(--subay-sunken); border-radius: 5px; padding: 1px 5px; }
+
+/* --------------------------------------------------------- RESPONSIVE ---- */
+
+@media (max-width: 900px) {
+  .auth { flex-direction: column; min-height: 0; }
+  .auth-rail { flex: 0 0 auto; max-width: none; padding: 36px 28px; }
+  .auth-rail .brand { margin-bottom: 28px; }
+  .auth-rail .pitch h2 { font-size: 30px; }
+  .auth-rail .credit { margin-top: 28px; padding-top: 0; }
+  .auth-main { padding: 36px 28px; }
+  .wrap, .wrap-narrow { padding: 0 24px; }
+  .topnav { padding: 16px 24px; }
+  .topnav .navlinks { display: none; }
+  .hero { padding: 56px 0 48px; }
+  .panel { padding: 36px 26px; }
+  .panel-split { gap: 32px; }
+  .site-footer { padding: 22px 24px; }
+}
+
+@media print {
+  .topnav, .site-footer, .hero-actions, .skip-link { display: none; }
+  body.subay-public { background: #fff; }
+}

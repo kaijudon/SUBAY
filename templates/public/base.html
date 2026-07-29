@@ -1,0 +1,19 @@
+{% load static %}<!DOCTYPE html>
+{% comment %}
+The pre-authentication shell. Deliberately NOT admin/base.html: these pages carry
+no nav sidebar, no user tools and no session, so inheriting the admin chrome
+would mean hiding most of it again.
+{% endcomment %}
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {# Localhost-only box, live study: never index these. #}
+  <meta name="robots" content="noindex, nofollow">
+  <title>{% block title %}SUBAY{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'public/css/subay-public.css' %}">
+</head>
+<body class="subay-public {% block bodyclass %}{% endblock %}">
+{% block body %}{% endblock %}
+</body>
+</html>

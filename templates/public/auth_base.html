@@ -1,0 +1,34 @@
+{% extends "public/base.html" %}
+
+{% comment %}
+The split-panel authentication shell: an inverted rail carrying the study's
+reason-for-being on the left, the form on the right. Any future pre-auth screen
+(TOTP enrolment, invitation acceptance) extends this and fills `auth_content`,
+so they cannot drift apart visually.
+{% endcomment %}
+
+{% block bodyclass %}subay-auth{% endblock %}
+
+{% block body %}
+<div class="auth">
+  <aside class="auth-rail">
+    <div class="brand">
+      <span class="mark"><span class="ico ico-shield" aria-hidden="true"></span></span>
+      <span class="wordmark">SUBAY</span>
+    </div>
+    <div class="pitch">
+      <h2>A Hero said yes. Everything after that is ours to keep.</h2>
+      <p>
+        A donated kidney is the start of a long follow-up, not the end of one.
+        Every visit kept and every result confirmed is how a transplant
+        programme earns the trust of the family who says yes next time.
+      </p>
+    </div>
+    <div class="credit">DOST-PCHRD · Southern Philippines Medical Center · CMV Project</div>
+  </aside>
+
+  <main class="auth-main">
+    {% block auth_content %}{% endblock %}
+  </main>
+</div>
+{% endblock %}

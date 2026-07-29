@@ -1,0 +1,18 @@
+{% comment %}
+Shared header for the public pages. `signin_url` is resolved by the caller so
+this file never has to know which admin site instance is mounted.
+{% endcomment %}
+<nav class="topnav">
+  <a class="wordmark" href="{% url 'public:landing' %}" style="display:flex;align-items:center;gap:12px">
+    <span class="mark"><span class="ico ico-shield" aria-hidden="true"></span></span>
+    SUBAY
+  </a>
+  <span class="navlinks">
+    <a href="{% url 'public:landing' %}#registry">The registry</a>
+    <a href="{% url 'public:landing' %}#deidentification">De-identification</a>
+    <a href="{% url 'public:protocol' %}">Protocol</a>
+  </span>
+  <span class="navactions">
+    <a class="btn btn-primary" href="{{ signin_url }}">Sign in</a>
+  </span>
+</nav>

@@ -1,0 +1,91 @@
+{% extends "public/base.html" %}
+
+{% block title %}SUBAY — the CMV kidney-transplant registry{% endblock %}
+
+{% block body %}
+<a class="skip-link" href="#main">Skip to content</a>
+{% include "public/_topnav.html" %}
+
+<main id="main">
+  <div class="wrap hero">
+    <span class="eyebrow"><span class="dot"></span>Southern Philippines Medical Center · CMV Project</span>
+
+    <h1 class="display">A virus keeps its own records. So should we.</h1>
+
+    <p class="lede">
+      SUBAY is the system of record for the SPMC kidney-transplant CMV study:
+      {{ target_recipients }} recipients at target, {{ timepoint_count }} protocol timepoints, every serology,
+      viral load, drug level and genotype call — captured once, verified by a
+      second pair of eyes, and exported de-identified when the analysis needs it.
+    </p>
+
+    <div class="hero-actions">
+      <a class="btn btn-primary btn-lg" href="{{ signin_url }}">Sign in to the registry</a>
+      <a class="btn btn-lg" href="{% url 'public:protocol' %}">Read the protocol</a>
+      <span class="note">Two-factor required · self-hosted at SPMC</span>
+    </div>
+
+    {% comment %}
+    Study-level counters only. This page is unauthenticated, so nothing on it may
+    be traceable to a subject — these are register-wide totals, never a
+    per-recipient figure.
+    {% endcomment %}
+    <div class="stat-strip">
+      {% for stat in stats %}
+        <div class="stat">
+          <div class="n">{{ stat.n }}</div>
+          <div class="label">{{ stat.label }}</div>
+        </div>
+      {% endfor %}
+    </div>
+
+    <div id="registry" class="card-grid">
+      {% for feature in features %}
+        <div class="card">
+          <span class="card-icon"><span class="ico {{ feature.icon }}" aria-hidden="true"></span></span>
+          <h3>{{ feature.title }}</h3>
+          <p>{{ feature.body }}</p>
+        </div>
+      {% endfor %}
+    </div>
+
+    <section id="deidentification" class="panel">
+      <div class="panel-eyebrow">The de-identification contract</div>
+      <div class="panel-split">
+        <div class="panel-copy">
+          <h2>Identifiers never had a column to live in.</h2>
+          <p>
+            Subjects are pseudonyms from the first keystroke. Every date in the
+            export becomes an integer offset from that recipient's transplant
+            day, free text is dropped, and the chokepoint aborts the whole
+            export if a single cell looks like a person's name.
+          </p>
+        </div>
+        {% comment %}
+        The subject IDs below are deliberately un-real: a live ID is
+        [S|D]CMV[R|D] plus two DIGITS, so "SCMVRxx" is shape-correct yet cannot
+        collide with anyone on the register. A realistic-looking sample on an
+        unauthenticated page is indistinguishable from an actual leak, both to a
+        reader and to the test that guards this page.
+        {% endcomment %}
+        <div class="codeblock">
+          <div class="fname">recipients.csv</div>
+          <div class="rule"></div>
+          <div class="head">subject_id,<span class="day">kt_day</span>,age,sex,risk_stratum</div>
+          <div class="row">SCMVRxx,<span class="day">0</span>,48,M,high</div>
+          <div class="row">SCMVRyy,<span class="day">0</span>,58,M,high</div>
+          <div class="rule"></div>
+          <div class="fname">quantitative.csv</div>
+          <div class="head">subject_id,<span class="day">draw_day</span>,value,tier</div>
+          <div class="row">SCMVRxx,<span class="day">91</span>,48200.00,syndrome</div>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <span>SUBAY — Surveillance &amp; Unified Bioarchive for Antiviral nephrologY</span>
+  <span class="right">Self-hosted · localhost-only · SPMC</span>
+</footer>
+{% endblock %}
