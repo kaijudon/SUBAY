@@ -8,8 +8,11 @@ those get explicit assertions rather than being inferred from "the page rendered
 import datetime
 
 import pytest
+from django.core.exceptions import ValidationError
 from django.urls import reverse
 from django.utils import formats
+
+from subay.registry.validators import subject_id_validator
 
 from subay.registry import safety
 from subay.registry.models import (
@@ -69,6 +72,20 @@ def test_landing_never_renders_a_subject_id(client, recipient):
 def test_protocol_never_renders_a_subject_id(client, recipient):
     response = client.get(reverse("public:protocol"))
     assert recipient.subject_id.encode() not in response.content
+
+
+def test_the_landing_pages_sample_export_ids_can_never_be_real_subjects():
+    """The de-identification panel prints SCMVRxx / SCMVRyy as sample export rows.
+
+    That is only safe because subject_id ends in two DIGITS, so no real subject
+    can ever be assigned one of those strings. The leak tests above check that
+    the subjects they create do not appear; they cannot check that the hardcoded
+    placeholders are unclaimable. This does, by asserting the validator rejects
+    them - which is the property the template is relying on.
+    """
+    for placeholder in ("SCMVRxx", "SCMVRyy"):
+        with pytest.raises(ValidationError):
+            subject_id_validator(placeholder)
 
 
 @pytest.mark.django_db
