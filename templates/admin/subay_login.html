@@ -5,7 +5,7 @@
 SubayAdminSite.login_template points here (see registry/sites.py).
 
 django-otp's OTPAdminSite solicits the token on the SAME request as the
-credentials — OTPAdminAuthenticationForm carries username, password, otp_device
+credentials - OTPAdminAuthenticationForm carries username, password, otp_device
 and otp_token together. So this is one screen, not the password-then-code pair a
 hosted SaaS would show; splitting it would mean holding half-authenticated state
 between requests, which is a new attack surface for no gain on a localhost-only
@@ -23,7 +23,7 @@ template guards it.
 <div class="auth-form">
   <h1>{% translate "Sign in" %}</h1>
   <p class="sub">
-    {% translate "Use your SPMC registry account. Two-factor is required — have your authenticator open." %}
+    {% translate "Use your SPMC registry account. Two-factor is required - have your authenticator open." %}
   </p>
 
   {% if form.non_field_errors %}
@@ -100,7 +100,7 @@ template guards it.
     </div>
     <p>
       {% blocktranslate trimmed %}
-        Codes are time-based — if yours is always rejected, the device clock is
+        Codes are time-based - if yours is always rejected, the device clock is
         probably out of sync. Accounts are created and re-issued by the data
         manager in person; there is no self-service reset on a self-hosted box.
       {% endblocktranslate %}

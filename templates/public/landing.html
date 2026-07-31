@@ -1,6 +1,6 @@
 {% extends "public/base.html" %}
 
-{% block title %}SUBAY — the CMV kidney-transplant registry{% endblock %}
+{% block title %}SUBAY - the CMV kidney-transplant registry{% endblock %}
 
 {% block body %}
 <a class="skip-link" href="#main">Skip to content</a>
@@ -15,7 +15,7 @@
     <p class="lede">
       SUBAY is the system of record for the SPMC kidney-transplant CMV study:
       {{ target_recipients }} recipients at target, {{ timepoint_count }} protocol timepoints, every serology,
-      viral load, drug level and genotype call — captured once, verified by a
+      viral load, drug level and genotype call - captured once, verified by a
       second pair of eyes, and exported de-identified when the analysis needs it.
     </p>
 
@@ -27,7 +27,7 @@
 
     {% comment %}
     Study-level counters only. This page is unauthenticated, so nothing on it may
-    be traceable to a subject — these are register-wide totals, never a
+    be traceable to a subject - these are register-wide totals, never a
     per-recipient figure.
     {% endcomment %}
     <div class="stat-strip">
@@ -85,7 +85,7 @@
 </main>
 
 <footer class="site-footer">
-  <span>SUBAY — Surveillance &amp; Unified Bioarchive for Antiviral nephrologY</span>
+  <span>SUBAY - Surveillance &amp; Unified Bioarchive for Antiviral nephrologY</span>
   <span class="right">Self-hosted · localhost-only · SPMC</span>
 </footer>
 {% endblock %}

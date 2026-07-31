@@ -4,7 +4,7 @@ These are the only two views in SUBAY that serve an unauthenticated request, so
 they carry one extra rule on top of the usual ones:
 
     **Nothing rendered here may be traceable to a subject.** No subject ID, no
-    date, no per-recipient row — only study-level aggregates. The de-identification
+    date, no per-recipient row - only study-level aggregates. The de-identification
     chokepoint guards the export; this module guards the front door.
 
 Everything factual on both pages is read from the registry's own constants and
@@ -27,7 +27,7 @@ from .models import (
 from .scheduling import TIMEPOINT_OFFSETS
 
 # The protocol's enrolment target and follow-up horizon. Not derivable from any
-# stored row — the target is a fact about the study, not about the data — so it
+# stored row - the target is a fact about the study, not about the data - so it
 # lives here as a named constant rather than as a number inline in a template.
 TARGET_RECIPIENTS = 40
 FOLLOWUP_DAYS = max(TIMEPOINT_OFFSETS.values())
@@ -52,7 +52,7 @@ STRATUM_PRESENTATION = [
         "D+/R−",
         "High risk",
         "The primary-infection group. Three months of prophylaxis and the tightest "
-        "QNAT schedule — no result in this stratum may go unverified.",
+        "QNAT schedule - no result in this stratum may go unverified.",
     ),
     (
         "intermediate",
@@ -70,7 +70,7 @@ STRATUM_PRESENTATION = [
     ),
     (
         "none",
-        "—",
+        "-",
         "Undetermined",
         "A serostatus was never recorded at transplant. The stratum stays blank "
         "rather than being guessed, and these recipients are reported separately.",
@@ -83,7 +83,7 @@ FEATURES = [
         "title": "The visit spine, computed",
         "body": "Six timepoints per recipient, shifted forward past any day the clinic "
         "or lab is closed. The registry tells you what is due, overdue or missed "
-        "— you never keep that list yourself.",
+        "- you never keep that list yourself.",
     },
     {
         "icon": "ico-shield",
@@ -116,7 +116,7 @@ FEATURES = [
     {
         "icon": "ico-team",
         "title": "Derive, don't store",
-        "body": "Age, eGFR, risk stratum, CD4/CD8, episodes — all computed at read. A "
+        "body": "Age, eGFR, risk stratum, CD4/CD8, episodes - all computed at read. A "
         "stored fact and its derived value can never quietly disagree.",
     },
 ]
@@ -157,8 +157,8 @@ def _signin_url():
 def _visit_spine():
     """The six protocol timepoints as display rows, in day order.
 
-    The window column quotes VISIT_SHIFT_CAP_DAYS because that — not a per-
-    timepoint tolerance — is the rule the model actually enforces: a draw more
+    The window column quotes VISIT_SHIFT_CAP_DAYS because that - not a per-
+    timepoint tolerance - is the rule the model actually enforces: a draw more
     than +N days past nominal is forced to `missed_visit`.
     """
     return [
@@ -198,14 +198,14 @@ def _assays():
             "cutoff": f"floor {CMVQuantitative.LOD} IU/mL",
             "body": f"{CMVQuantitative.ASSAY}. The limit of detection and the limit of "
             "quantification are the same number, so a result under the floor is "
-            "stored as the floor with a below-floor flag, never as zero — the "
+            "stored as the floor with a below-floor flag, never as zero - the "
             "series stays honest about what the assay could see.",
         },
         {
             # No cutoff is published here on purpose. The SPMC Transplant
             # Immunology Unit advisory of 2026-06-03 superseded the single 2.0
             # AU/mL threshold this model still applies (DEC-016), and the model
-            # has not been updated yet — see DEC-029 and prd/issues/17. The page
+            # has not been updated yet - see DEC-029 and prd/issues/17. The page
             # derives its figures from the model's constants so the two can never
             # disagree; that same guarantee means it must publish nothing rather
             # than publish a cutoff now known to be stale.
@@ -213,7 +213,7 @@ def _assays():
             "cutoff": "under revision",
             "body": "IgG and IgM channels. The donor's baseline draw derives the pair's "
             "serostatus, which is cross-checked against the status recorded at "
-            "transplant and flagged — never overwritten — when the two disagree. "
+            "transplant and flagged - never overwritten - when the two disagree. "
             "The reference ranges are being updated to the laboratory's "
             "second-generation assay; ask the data manager for the values in "
             "force for a given draw.",
@@ -238,7 +238,7 @@ def _assays():
 
 
 def landing(request):
-    """The public front door. Study-level counters only — see the module docstring."""
+    """The public front door. Study-level counters only - see the module docstring."""
     return render(
         request,
         "public/landing.html",

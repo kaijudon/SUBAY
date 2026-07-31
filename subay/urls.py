@@ -1,8 +1,8 @@
 """SUBAY URLs.
 
 The customized admin remains the only interface for data entry and ops. The two
-routes outside it are unauthenticated read-only pages — the landing page and the
-protocol summary — which serve no subject-level data (see
+routes outside it are unauthenticated read-only pages - the landing page and the
+protocol summary - which serve no subject-level data (see
 `registry/views_public.py`).
 """
 from django.contrib import admin
