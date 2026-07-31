@@ -9,6 +9,7 @@ import datetime
 
 import pytest
 from django.urls import reverse
+from django.utils import formats
 
 from subay.registry import safety
 from subay.registry.models import (
@@ -73,11 +74,26 @@ def test_protocol_never_renders_a_subject_id(client, recipient):
 @pytest.mark.django_db
 def test_public_pages_never_render_a_calendar_date_from_the_register(client, recipient):
     """kt_date is the day-0 anchor; it is the exact shape of value the export
-    contract forbids leaving the system. Neither page may render one."""
+    contract forbids leaving the system. Neither page may render one.
+
+    Checking only the ISO form would miss the likeliest way a date actually
+    escapes: a date object dropped into a template renders through Django's
+    DATE_FORMAT ("Jan. 5, 2026"), not as an ISO string. Every rendering a
+    template can produce without being asked has to be covered.
+    """
+    renderings = [
+        rendered
+        for value in (recipient.kt_date, recipient.date_of_birth)
+        for rendered in (
+            value.isoformat(),
+            formats.date_format(value),
+            formats.date_format(value, "SHORT_DATE_FORMAT"),
+        )
+    ]
     for name in ("public:landing", "public:protocol"):
-        body = client.get(reverse(name)).content
-        assert recipient.kt_date.isoformat().encode() not in body
-        assert recipient.date_of_birth.isoformat().encode() not in body
+        body = client.get(reverse(name)).content.decode()
+        for rendered in renderings:
+            assert rendered not in body, f"{name} leaked {rendered!r}"
 
 
 # ----------------------------------------------------------- derived figures
@@ -176,13 +192,23 @@ def test_login_uses_the_subay_split_panel_template(client):
 @pytest.mark.django_db
 def test_login_solicits_credentials_and_the_otp_token_on_one_screen(client):
     """django-otp's admin form carries all three fields in one request; the
-    template must render each of them or a user cannot complete a sign-in."""
+    template must render each of them or a user cannot complete a sign-in.
+
+    Asserted on the name attribute rather than the id, because `id_otp_token`
+    is also emitted by the field's own <label for=...>. A template that kept
+    the label and dropped the input would satisfy the id check while leaving
+    nowhere to type the code.
+    """
     body = client.get(reverse("admin:login")).content.decode()
-    for field_id in ("id_username", "id_password", "id_otp_token"):
-        assert field_id in body
+    for field in ("username", "password", "otp_token"):
+        assert f'name="{field}"' in body
 
 
 @pytest.mark.django_db
 def test_login_offers_a_way_back_to_the_landing_page(client):
+    """Asserted as a whole href. The landing page is mounted at "/", so a bare
+    substring check is satisfied by every closing tag on the page and would
+    pass even with the link deleted.
+    """
     body = client.get(reverse("admin:login")).content.decode()
-    assert reverse("public:landing") in body
+    assert f'href="{reverse("public:landing")}"' in body
