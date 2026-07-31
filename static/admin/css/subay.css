@@ -188,6 +188,21 @@ thead th, tfoot td {
 }
 td, th { padding: 11px 16px; border-bottom: 1px solid var(--subay-line-soft); font-size: 13px; }
 
+/* Changelists carry many more columns than an inline or a detail table, and the
+   filter rail takes 240px out of the row. At 16px of side padding the recipient
+   list needs 910px inside an 813px box, so the last column disappears behind
+   the rail and only a horizontal scroll brings it back. Tighter side padding
+   fits the whole table on a 1440 screen; .results keeps overflow-x:auto as the
+   fallback for a genuinely wider changelist. */
+#changelist table td,
+#changelist table th { padding-left: 10px; padding-right: 10px; }
+
+/* A long header such as "SEQUENCING INCLUDED" over a one-glyph boolean column
+   sets the column's width on its own. Letting the label wrap costs one row of
+   header height and buys back more than a hundred pixels of table. */
+#changelist table thead th,
+#changelist table thead th a { white-space: normal; }
+
 /* Zebra striping fights the eye on long clinical tables - drop it. */
 tr:nth-child(odd), tr:nth-child(even) { background: var(--subay-surface); }
 #changelist table tbody tr:hover { background: var(--subay-selected); }
