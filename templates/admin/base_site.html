@@ -7,7 +7,19 @@
    defaulting the site title to "SUBAY". #}
 {% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title|default:_('SUBAY') }}{% endblock %}
 
-{% block extrastyle %}{{ block.super }}<link rel="stylesheet" href="{% static 'admin/css/subay.css' %}">{% endblock %}
+{% comment %}
+  The reskin loads in extrahead, NOT extrastyle. Per-page admin templates add
+  their own stylesheets inside extrastyle via {{ block.super }} (change_form.html
+  pulls in forms.css, change_list.html pulls in changelists.css), and a child
+  block wraps the parent's, so anything we put in extrastyle is loaded BEFORE
+  them and loses every specificity tie. That is why change forms rendered with
+  Django's stock dark fieldset headings while the dashboard rendered ours.
+
+  extrahead is emitted after extrastyle, so the reskin wins. responsive.css
+  still loads after us, which is what we want: its rules are inside width media
+  queries and should keep overriding at narrow viewports.
+{% endcomment %}
+{% block extrahead %}{{ block.super }}<link rel="stylesheet" href="{% static 'admin/css/subay.css' %}">{% endblock %}
 
 {% block branding %}
 <div id="site-name"><a href="{% url 'admin:index' %}">SUBAY</a></div>

@@ -13,7 +13,7 @@
   {% for tile in dashboard_tiles %}
   <section class="dashboard-tile dashboard-tile-{{ tile.kind }}" aria-labelledby="tile-{{ tile.key }}-heading">
     <h2 id="tile-{{ tile.key }}-heading" class="tile-heading">
-      <span class="ico {{ tile.icon }}" aria-hidden="true"></span>{{ tile.title }}
+      <span class="ico ico-title {{ tile.icon }}" aria-hidden="true"></span>{{ tile.title }}
     </h2>
     {% if tile.kind == "count" %}
     <p class="tile-big-count"><a href="{{ tile.link }}" title="{{ tile.link_label }}">{{ tile.count }}</a></p>
