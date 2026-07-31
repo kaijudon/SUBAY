@@ -1,9 +1,9 @@
 /* ===========================================================================
-   SUBAY icon masks — the Aiko set, painted with currentColor.
+   SUBAY icon masks - the Aiko set, painted with currentColor.
    ---------------------------------------------------------------------------
    Shared by the admin reskin and the public pages so a glyph is named once.
    Masking (rather than <img>) is what lets a single monochrome SVG inherit the
-   colour of whatever it sits in — a teal card icon and a white header icon are
+   colour of whatever it sits in - a teal card icon and a white header icon are
    the same file.
 
    The SVGs live under static/admin/img/icons/ for historical reasons; paths

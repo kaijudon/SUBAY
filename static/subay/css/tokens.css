@@ -1,5 +1,5 @@
 /* ===========================================================================
-   SUBAY design tokens — the single source for palette, type and elevation.
+   SUBAY design tokens - the single source for palette, type and elevation.
    ---------------------------------------------------------------------------
    Imported by BOTH skins so a colour is picked once and can never drift:
 
@@ -23,14 +23,14 @@
 @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap");
 
 :root {
-  /* Brand — teal is the ONLY interactive colour. */
+  /* Brand - teal is the ONLY interactive colour. */
   --subay-teal-700: #0e5a51;
   --subay-teal-600: #12756a;
   --subay-teal-500: #1a9083;
   --subay-teal-100: #d7ede8;
   --subay-teal-50:  #eef7f5;
 
-  /* Status — never used on a control. */
+  /* Status - never used on a control. */
   --subay-amber-700: #8a5200;
   --subay-amber-600: #b26b00;
   --subay-amber-100: #faebd5;
@@ -73,7 +73,7 @@
   --subay-shadow:    0 2px 8px -2px rgba(13, 40, 36, .10), 0 8px 24px -8px rgba(13, 40, 36, .12);
 }
 
-/* Dark mode is charcoal, not near-black — a clinical screen is read for hours
+/* Dark mode is charcoal, not near-black - a clinical screen is read for hours
    and true black at this contrast produces halation on thin type. */
 html[data-theme="dark"] {
   --subay-canvas:      #1c1f1e;

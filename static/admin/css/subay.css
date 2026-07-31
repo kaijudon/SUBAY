@@ -1,12 +1,12 @@
 /* ===========================================================================
-   SUBAY admin reskin — Django-admin surface of the design system.
+   SUBAY admin reskin - Django-admin surface of the design system.
    ---------------------------------------------------------------------------
    Cosmetic only: no markup forked beyond branding, no JS, no new dependency.
    The palette lives in static/subay/css/tokens.css (shared with the public
    pages); this file only maps those tokens onto the custom properties Django
    documents, then trims the handful of stock rules that fight the system.
 
-   The sign-in page is NOT styled here — SubayAdminSite.login_template points at
+   The sign-in page is NOT styled here - SubayAdminSite.login_template points at
    admin/subay_login.html, which is a standalone split-panel screen carrying its
    own stylesheet.
    =========================================================================== */
@@ -188,7 +188,7 @@ thead th, tfoot td {
 }
 td, th { padding: 11px 16px; border-bottom: 1px solid var(--subay-line-soft); font-size: 13px; }
 
-/* Zebra striping fights the eye on long clinical tables — drop it. */
+/* Zebra striping fights the eye on long clinical tables - drop it. */
 tr:nth-child(odd), tr:nth-child(even) { background: var(--subay-surface); }
 #changelist table tbody tr:hover { background: var(--subay-selected); }
 #changelist tbody tr.selected,
@@ -312,7 +312,7 @@ label { color: var(--subay-ink-2); font-weight: 500; font-size: 12px; }
 .tile-bucket { border-bottom: 1px solid var(--subay-line-soft); }
 .tile-bucket .bucket-count { font-family: var(--subay-font-mono); color: var(--subay-ink); }
 
-/* Status pills — one shape, one meaning per colour. */
+/* Status pills - one shape, one meaning per colour. */
 .sched-count { border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 500; }
 .sched-overdue  { background: var(--subay-coral-100); color: var(--subay-coral-700); }
 .sched-missed   { background: var(--subay-sunken);    color: var(--subay-ink-3); }

@@ -53,7 +53,7 @@ class SubayAdminSite(OTPAdminSite):
     index_template = "admin/subay_index.html"
     # Sign-in screen. OTPAdminSite defaults this to django-otp's vendored
     # `otp/admin111/login.html`, so an `admin/login.html` override would be
-    # silently ignored — name the template explicitly instead, as index_template
+    # silently ignored - name the template explicitly instead, as index_template
     # above does. It extends the public split-panel shell rather than the admin
     # chrome; see templates/admin/subay_login.html.
     login_template = "admin/subay_login.html"

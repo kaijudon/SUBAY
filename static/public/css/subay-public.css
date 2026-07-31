@@ -1,5 +1,5 @@
 /* ===========================================================================
-   SUBAY public surface — landing, protocol summary, sign-in.
+   SUBAY public surface - landing, protocol summary, sign-in.
    ---------------------------------------------------------------------------
    The three screens a person sees BEFORE they are authenticated. Same tokens as
    the admin reskin (static/subay/css/tokens.css), different layout vocabulary:
@@ -7,7 +7,7 @@
    measure and full-bleed panels; the admin gets density.
 
    No JS. Nothing here is behind a permission check, so nothing here may render
-   a subject identifier — the aggregate counters on the landing page are
+   a subject identifier - the aggregate counters on the landing page are
    deliberately study-level.
    =========================================================================== */
 
@@ -29,7 +29,7 @@ body.subay-public {
 }
 
 /* :not(.btn) matters. `.subay-public a` outweighs `.btn-primary` on specificity,
-   so without it every anchor-shaped button was repainted teal-on-teal — the
+   so without it every anchor-shaped button was repainted teal-on-teal - the
    label vanished into its own background. Buttons own their colour below. */
 .subay-public a:not(.btn) { color: var(--subay-teal-600); text-decoration: none; }
 .subay-public a:not(.btn):hover { color: var(--subay-teal-700); text-decoration: underline; text-underline-offset: 3px; }
@@ -37,7 +37,7 @@ body.subay-public {
 .subay-public h1, .subay-public h2 { text-wrap: balance; }
 .subay-public p { text-wrap: pretty; }
 
-/* Visible focus everywhere — a keyboard-only coordinator must never lose the
+/* Visible focus everywhere - a keyboard-only coordinator must never lose the
    caret on a page with this little chrome. */
 .subay-public :focus-visible {
   outline: 2px solid var(--subay-teal-600);
@@ -344,7 +344,7 @@ section.doc > .section-note {
 .tile .cut { font-family: var(--subay-font-mono); font-size: 13px; color: var(--subay-teal-600); margin-bottom: 9px; }
 .tile h3 { font-size: 14px; font-weight: 600; margin: 0 0 6px; }
 
-/* Status pills — the same three meanings as the admin, same colours. */
+/* Status pills - the same three meanings as the admin, same colours. */
 .pill {
   font-family: var(--subay-font-mono);
   font-size: 12px;
@@ -431,7 +431,7 @@ body.subay-auth { min-height: 100vh; }
   box-shadow: 0 0 0 3px var(--subay-teal-100);
   outline: none;
 }
-/* The token is read off a phone and typed back — give it the same monospace
+/* The token is read off a phone and typed back - give it the same monospace
    treatment as every other number in the system, and a wide tracking so a
    transposed digit is visible. */
 .field-token input {

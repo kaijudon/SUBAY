@@ -101,7 +101,7 @@ def test_public_pages_never_render_a_calendar_date_from_the_register(client, rec
 
 @pytest.mark.django_db
 def test_landing_counters_follow_the_register(client, recipient):
-    """The counters are aggregates, so they must move when the register does —
+    """The counters are aggregates, so they must move when the register does -
     a hardcoded number would be a stored fact that drifts."""
     RecipientVisit.objects.create(
         recipient=recipient,
@@ -117,7 +117,7 @@ def test_landing_counters_follow_the_register(client, recipient):
 
 @pytest.mark.django_db
 def test_protocol_spine_matches_the_scheduling_module(client):
-    """The rendered spine is the scheduling module's spine, in day order — not a
+    """The rendered spine is the scheduling module's spine, in day order - not a
     second copy of it that can fall behind."""
     spine = client.get(reverse("public:protocol")).context["spine"]
     assert [row["timepoint"] for row in spine] == sorted(
@@ -142,7 +142,7 @@ def test_protocol_quotes_the_real_assay_constants(client):
 def test_protocol_publishes_no_serology_cutoff_while_the_ranges_are_stale(client):
     """The SPMC advisory of 2026-06-03 superseded CMVSerology.POSITIVE_THRESHOLD
     and the model has not caught up (DEC-029, prd/issues/17). Until it does, the
-    page must publish no serology cutoff at all — a stale clinical threshold on
+    page must publish no serology cutoff at all - a stale clinical threshold on
     an unauthenticated page is the one figure here a clinician might act on.
 
     This test is the tripwire for slice 17: adopting the new ranges should make
