@@ -40,6 +40,7 @@ from .serology_ranges import (
     generation_for,
     interpret_igg,
     interpret_igm,
+    serostatus_from,
 )
 from .validators import subject_id_validator
 
@@ -343,29 +344,40 @@ class Recipient(BaseSubject):
 
     @property
     def pre_kt_igg_serostatus(self):
-        """R+/R- computed ONCE from the pre_kt visit's IgG serology (single
-        2.0 AU/mL cutoff). The canonical pre-KT serostatus both Obj 4a
-        stratification and Obj 5 attribution consume — derived, never stored, so
-        the two objectives can never read disagreeing values. None when there is
-        no pre_kt visit or its IgG result is missing."""
+        """R+/R- computed ONCE from the pre_kt visit's IgG serology, read against
+        the reagent generation that produced it. The canonical pre-KT serostatus
+        both Obj 4a stratification and Obj 5 attribution consume — derived, never
+        stored, so the two objectives can never read disagreeing values.
+
+        None when there is no pre_kt visit, when its IgG result is missing, or
+        when the reading is EQUIVOCAL. The grayzone is not a third category: an
+        equivocal recipient is undetermined until a repeat draw resolves it, and
+        is treated exactly as an absent draw is."""
         visit = self.visits.filter(timepoint_label="pre_kt").first()
         if visit is None:
             return None
         s = visit.serologies.first()
-        if s is None or s.is_positive is None:
+        if s is None:
             return None
-        return "POS" if s.is_positive else "NEG"
+        return serostatus_from(s.igg_interpretation)
 
     @property
     def has_donor_serostatus_mismatch(self):
         """Flag (never overwrite) a clash between the recorded donor serostatus
         and the paired donor's own serology. Surfaces for hand reconciliation;
-        both stored facts stay intact. False when either side is missing."""
+        both stored facts stay intact.
+
+        Three answers, not two. None means NOT COMPARABLE — no paired donor, no
+        recorded serostatus, or a donor serology that yielded no baseline (absent
+        or equivocal). It is deliberately distinct from False, which asserts that
+        the two sides WERE compared and agreed. Collapsing the two would present
+        the weakest possible donor evidence to a reviewer as a clean all-clear,
+        which the equivocal band makes a common case rather than a rare one."""
         if self.donor_id is None:
-            return False
+            return None
         donor_status = self.donor.baseline_serostatus
         if not self.donor_serostatus or not donor_status:
-            return False
+            return None
         return self.donor_serostatus != donor_status
 
     def _reported_qnat_points(self):
@@ -451,12 +463,18 @@ class Donor(BaseSubject):
 
     @property
     def baseline_serostatus(self):
-        """POS/NEG from the donor's single serology (2.0 AU/mL threshold), else
-        None. Derived — never stored, so it can't disagree with the lab value."""
+        """POS/NEG from the donor's single serology, read against the reagent
+        generation that produced it. Derived — never stored, so it can't disagree
+        with the lab value.
+
+        None when there is no draw, when the result is missing, or when the
+        reading is EQUIVOCAL. A donor has at most one baseline serology, so an
+        equivocal donor result is terminal: there is no second row to resolve it
+        and the donor simply has no established baseline serostatus."""
         s = self.serologies.first()
-        if s is None or s.is_positive is None:
+        if s is None:
             return None
-        return "POS" if s.is_positive else "NEG"
+        return serostatus_from(s.igg_interpretation)
 
 
 class ClosureDay(models.Model):

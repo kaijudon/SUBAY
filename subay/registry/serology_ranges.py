@@ -114,3 +114,29 @@ def interpret_igg(value, generation):
 def interpret_igm(value, generation):
     """Three-state IgM reading under the ranges in force for `generation`."""
     return _interpret(value, _IGM_BANDS, generation)
+
+
+# --- Serostatus ------------------------------------------------------------
+
+POS = "POS"
+NEG = "NEG"
+
+
+def serostatus_from(interpretation):
+    """POS / NEG / None from a three-state IgG reading (slice 17, ticket 02).
+
+    Both the recipient's pre-KT serostatus and the donor's baseline serostatus
+    make this same translation, and they must never disagree about it, so it is
+    written once here rather than twice at the two call sites.
+
+    An EQUIVOCAL reading yields None, exactly as an absent draw does. The PI's
+    ruling is that the grayzone is not a category: a subject whose IgG lands in
+    it has no established serostatus until a repeat draw resolves it. Rounding
+    equivocal towards either answer would invent a stratification the lab did
+    not support.
+    """
+    if interpretation == REACTIVE:
+        return POS
+    if interpretation == NON_REACTIVE:
+        return NEG
+    return None  # equivocal, or not measured at all
