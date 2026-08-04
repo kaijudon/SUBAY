@@ -107,22 +107,34 @@ def test_export_replaces_positivity_booleans_with_interpretations():
     assert "igm_interpretation" in names
 
 
-def test_export_serology_carries_the_reagent_generation(seeded_both_generations, tmp_path):
-    """Every row states which reagent produced it. Without this the analyst
-    cannot tell a reactive-under-gen1 row from a reactive-under-gen2 row, and
-    those are different measurements (DEC-030 decision 2)."""
-    _, rows = _serology_rows(tmp_path)
-    by_subject = _by_subject(rows, seeded_both_generations)
+def test_export_withholds_the_reagent_generation(seeded_both_generations, tmp_path):
+    """The generation is a date in disguise and must not reach the snapshot.
 
-    assert by_subject["SCMVR01"]["reagent_generation"] == GEN1
-    assert by_subject["SCMVR02"]["reagent_generation"] == GEN2
-    assert all(r["reagent_generation"] for r in rows.values())  # never blank
+    generation_for() returns gen2 exactly when the draw fell on or after the
+    2026-06-03 advisory, so the code partitions every row by a known calendar
+    boundary. Next to day_offset that narrows the transplant date to a window,
+    which is the disclosure the day-offset rule exists to prevent. The column
+    passes _assert_no_identifier_leak untouched - "gen2" is not date-shaped -
+    so nothing but this test stands between it and the file.
+    """
+    _, rows = _serology_rows(tmp_path)
+
+    assert "reagent_generation" not in [name for name, _ in SEROLOGY_COLUMNS]
+    for row in rows.values():
+        assert "reagent_generation" not in row
+        assert GEN1 not in row.values()
+        assert GEN2 not in row.values()
 
 
 def test_export_reads_each_row_against_its_own_generation(seeded_both_generations, tmp_path):
     """The same file holds both interpretations at once without either
     corrupting the other. 3.00 AU/mL is reactive under the 1st-generation
-    cutoff; 0.80 AU/mL is equivocal only because its row is 2nd generation."""
+    cutoff; 0.80 AU/mL is equivocal only because its row is 2nd generation.
+
+    With the generation column withheld this is the only remaining evidence that
+    per-row banding happened at all, so it carries more weight than it did when
+    the analyst could read the generation off the file and check the work.
+    """
     _, rows = _serology_rows(tmp_path)
     by_subject = _by_subject(rows, seeded_both_generations)
 
@@ -194,7 +206,7 @@ def test_export_manifest_declares_the_new_serology_column_types(
         "columns"
     ]
 
-    assert columns["reagent_generation"] == "c"
+    assert "reagent_generation" not in columns
     assert columns["igg_interpretation"] == "c"
     assert columns["igm_interpretation"] == "c"
     assert "is_positive" not in columns

@@ -131,16 +131,19 @@ VISIT_COLUMNS = [
 # blanked entirely (consistent with donor-attached serology, DEC-006). The row
 # still lists the draw record without ever emitting the calendar date.
 DONORVISIT_COLUMNS = [("id", "i"), ("donor", "c"), ("day_offset", "i")]
-# Serology carries its reagent generation so the file is readable without having
-# to ask which reagent was in force: a value and the same value on the other
-# generation are different measurements (DEC-030), and the analyst can see which
-# bands each row was read against. Raw `value`/`igm_value` stay alongside the
-# interpretations so an analyst can re-band independently of what SUBAY decided.
+# `reagent_generation` is deliberately NOT here. It reads as a lab detail, but it
+# is a pure function of the draw date - generation_for() returns GEN2 exactly when
+# the draw fell on or after the 2026-06-03 advisory - so shipping it would publish
+# which side of a known calendar boundary every draw sits on. Paired with
+# day_offset that narrows the transplant date to a window, which is the whole
+# disclosure the day-offset rule exists to prevent. The interpretation the analyst
+# actually needs is already materialized below, read against the right bands inside
+# SUBAY (DEC-030); raw `value`/`igm_value` stay alongside it so an analyst can
+# re-band independently of what SUBAY decided.
 SEROLOGY_COLUMNS = [
     ("id", "i"),
     ("parent_type", "c"),
     ("parent_id", "c"),
-    ("reagent_generation", "c"),
     ("value", "d"),
     ("result_status", "c"),
     ("igg_interpretation", "c"),  # materialized derived value (Slice 17)
@@ -545,7 +548,7 @@ class Command(BaseCommand):
                 # distinguishable from one that was never obtained.
                 igg_cell = s.igg_interpretation or ""
                 igm_cell = s.igm_interpretation or ""
-                w.writerow([s.id, parent_type, parent_id, s.effective_reagent_generation,
+                w.writerow([s.id, parent_type, parent_id,
                             value_cell, s.result_status, igg_cell,
                             igm_value_cell, s.igm_status, igm_cell, offset])
 
