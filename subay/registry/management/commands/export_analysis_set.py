@@ -131,16 +131,22 @@ VISIT_COLUMNS = [
 # blanked entirely (consistent with donor-attached serology, DEC-006). The row
 # still lists the draw record without ever emitting the calendar date.
 DONORVISIT_COLUMNS = [("id", "i"), ("donor", "c"), ("day_offset", "i")]
+# Serology carries its reagent generation so the file is readable without having
+# to ask which reagent was in force: a value and the same value on the other
+# generation are different measurements (DEC-030), and the analyst can see which
+# bands each row was read against. Raw `value`/`igm_value` stay alongside the
+# interpretations so an analyst can re-band independently of what SUBAY decided.
 SEROLOGY_COLUMNS = [
     ("id", "i"),
     ("parent_type", "c"),
     ("parent_id", "c"),
+    ("reagent_generation", "c"),
     ("value", "d"),
-    ("is_positive", "c"),
     ("result_status", "c"),
+    ("igg_interpretation", "c"),  # materialized derived value (Slice 17)
     ("igm_value", "d"),
     ("igm_status", "c"),
-    ("igm_positive", "c"),  # materialized derived value (Slice 05)
+    ("igm_interpretation", "c"),  # materialized derived value (Slice 17)
     ("day_offset", "i"),
 ]
 # Long viral-load series: one row per CMVQuantitative result (Slice 05). A
@@ -533,10 +539,15 @@ class Command(BaseCommand):
                     parent_type, parent_id, offset = "donor", s.donor_id, ""
                 value_cell = s.value if s.value is not None else ""
                 igm_value_cell = s.igm_value if s.igm_value is not None else ""
-                igm_positive_cell = "" if s.igm_positive is None else s.igm_positive
-                w.writerow([s.id, parent_type, parent_id, value_cell, s.is_positive,
-                            s.result_status, igm_value_cell, s.igm_status,
-                            igm_positive_cell, offset])
+                # Blank means "not measured" and nothing else. `equivocal` is a
+                # value in this column, not an absence: the whole point of the
+                # three-state reading is that an indeterminate result stays
+                # distinguishable from one that was never obtained.
+                igg_cell = s.igg_interpretation or ""
+                igm_cell = s.igm_interpretation or ""
+                w.writerow([s.id, parent_type, parent_id, s.effective_reagent_generation,
+                            value_cell, s.result_status, igg_cell,
+                            igm_value_cell, s.igm_status, igm_cell, offset])
 
     def _write_quantitatives(self, base):
         with (base / "cmvquantitative.csv").open("w", newline="") as fh:

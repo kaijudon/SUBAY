@@ -489,7 +489,10 @@ def test_export_serology_has_materialized_igm_columns(seeded_slice05, tmp_path):
         row = list(csv.DictReader(fh))[0]
     assert row["igm_value"] == "1.00"
     assert row["igm_status"] == "reported"
-    assert row["igm_positive"] == "False"  # materialized derived value, 1.0 < 2.0
+    # Was igm_positive=False. The materialized derived value is now the
+    # three-state reading (slice 17): 1.0 AU/mL under 1st-generation reagent,
+    # whose only boundary is 2.00, is non-reactive.
+    assert row["igm_interpretation"] == "non_reactive"
 
 
 def test_export_materializes_pre_kt_igg_serostatus(seeded_slice05, tmp_path):
