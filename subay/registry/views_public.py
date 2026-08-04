@@ -9,11 +9,13 @@ they carry one extra rule on top of the usual ones:
 
 Everything factual on both pages is read from the registry's own constants and
 querysets rather than retyped as prose (`TIMEPOINT_OFFSETS`, `VISIT_SHIFT_CAP_DAYS`,
-`CMVQuantitative.LOD`, `CMVSerology.POSITIVE_THRESHOLD`, `safety.RELEASE_*`). A
+`CMVQuantitative.LOD`, `serology_ranges.bands_for`, `safety.RELEASE_*`). A
 threshold quoted on a public page that disagrees with the threshold the software
 enforces is worse than no page at all, and deriving it is the only way the two
 cannot drift.
 """
+import datetime
+
 from django.shortcuts import render
 from django.urls import reverse
 
@@ -25,6 +27,7 @@ from .models import (
     VISIT_SHIFT_CAP_DAYS,
 )
 from .scheduling import TIMEPOINT_OFFSETS
+from .serology_ranges import bands_for, generation_for
 
 # The protocol's enrolment target and follow-up horizon. Not derivable from any
 # stored row - the target is a fact about the study, not about the data - so it
@@ -192,6 +195,9 @@ def _stratum_counts():
 
 def _assays():
     """Assay cutoffs, each read from the constant that enforces it."""
+    bands = bands_for(generation_for(datetime.date.today()))
+    igg_equivocal, igg_reactive = bands["igg"]
+    igm_equivocal, igm_reactive = bands["igm"]
     return [
         {
             "name": "CMV quantitative (QNAT)",
@@ -202,21 +208,22 @@ def _assays():
             "series stays honest about what the assay could see.",
         },
         {
-            # No cutoff is published here on purpose. The SPMC Transplant
-            # Immunology Unit advisory of 2026-06-03 superseded the single 2.0
-            # AU/mL threshold this model still applies (DEC-016), and the model
-            # has not been updated yet - see DEC-029 and prd/issues/17. The page
-            # derives its figures from the model's constants so the two can never
-            # disagree; that same guarantee means it must publish nothing rather
-            # than publish a cutoff now known to be stale.
+            # The generation comes from today's date, not a hardcoded GEN2. The
+            # page publishes the ranges IN FORCE, and the only way it stays that
+            # way across the next advisory is to ask the same function the
+            # interpreter asks. Rows drawn under the earlier reagent are still
+            # read against the earlier bands (DEC-030), but a public summary of
+            # what the lab runs today is not the place to publish both.
             "name": "CMV serology",
-            "cutoff": "under revision",
-            "body": "IgG and IgM channels. The donor's baseline draw derives the pair's "
-            "serostatus, which is cross-checked against the status recorded at "
-            "transplant and flagged - never overwritten - when the two disagree. "
-            "The reference ranges are being updated to the laboratory's "
-            "second-generation assay; ask the data manager for the values in "
-            "force for a given draw.",
+            "cutoff": f"IgG ≥ {igg_reactive} · IgM ≥ {igm_reactive} AU/mL",
+            "body": "IgG and IgM channels, reactive at or above those values. Each "
+            f"channel has a grayzone below it - {igg_equivocal} to under "
+            f"{igg_reactive} on IgG, {igm_equivocal} to under {igm_reactive} on "
+            "IgM - and a result inside one is recorded as equivocal, never "
+            "rounded into a serostatus the laboratory did not give. The donor's "
+            "baseline draw derives the pair's serostatus, which is cross-checked "
+            "against the status recorded at transplant and flagged - never "
+            "overwritten - when the two disagree.",
         },
         {
             "name": "Release timeliness",

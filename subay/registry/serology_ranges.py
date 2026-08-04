@@ -116,6 +116,18 @@ def interpret_igm(value, generation):
     return _interpret(value, _IGM_BANDS, generation)
 
 
+def bands_for(generation):
+    """The (equivocal_from, reactive_from) pair per channel for `generation`.
+
+    The public protocol page publishes the ranges rather than merely applying
+    them, and it must publish the ones the interpreter actually uses. Reading
+    the same map `interpret_igg`/`interpret_igm` read is the only way the page
+    and the software cannot drift; retyping the numbers into a view would
+    reintroduce exactly the staleness slice 17 exists to remove.
+    """
+    return {"igg": _IGG_BANDS[generation], "igm": _IGM_BANDS[generation]}
+
+
 # --- Serostatus ------------------------------------------------------------
 
 POS = "POS"
