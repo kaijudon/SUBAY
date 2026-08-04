@@ -1,0 +1,89 @@
+name: No agent attribution
+
+# CLAUDE.md forbids agent-attribution trailers on commits and PRs. The commit-msg
+# hook in .githooks/ handles the common case, but a hook is advisory: --no-verify
+# skips it, a fresh clone has no core.hooksPath until someone runs the setup
+# script, and no local hook can see a PR body at all. Every one of those routes
+# has already leaked a trailer into this repo, so this job is the backstop that
+# runs no matter which machine or clone the work came from.
+#
+# It checks the PR body and every commit message on the branch. Removing a
+# trailer after the fact means rewriting published history, which is expensive
+# and invalidates the open PR - far better to fail here before the merge.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan commit messages and the PR body
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -uo pipefail
+          # Names no model on purpose. "Claude Opus 4.8" was yesterday's and
+          # "Claude Opus 5" is today's; pinning either would mean editing this
+          # file whenever the model changes, which is a guard that silently
+          # lapses. The anthropic.com address or the Claude name covers all of
+          # them.
+          #
+          # Anchored to a line start, because a real trailer always sits at one
+          # while prose about the rule does not. This repo's own docs and
+          # .sandcastle/*.md say "do NOT add a `Co-Authored-By:` trailer", and an
+          # earlier draft of this check failed on the very commit that
+          # introduced it. A guard that fires on its own documentation is one
+          # people learn to bypass.
+          pattern='^Co-Authored-By:.*(Claude|anthropic\.com)|Generated with \[Claude Code\]\('
+          status=0
+
+          echo "== PR body =="
+          if printf '%s' "$PR_BODY" | grep -Eiq "$pattern"; then
+            echo "FAIL: the PR body carries an agent-attribution trailer."
+            printf '%s' "$PR_BODY" | grep -Ein "$pattern" | sed 's/^/    /'
+            status=1
+          else
+            echo "clean"
+          fi
+
+          echo "== commit messages ($BASE_SHA..$HEAD_SHA) =="
+          offenders=0
+          while read -r sha; do
+            [ -z "$sha" ] && continue
+            if git log -1 --format='%B' "$sha" | grep -Eiq "$pattern"; then
+              echo "FAIL: $sha $(git log -1 --format='%s' "$sha")"
+              git log -1 --format='%B' "$sha" | grep -Ein "$pattern" | sed 's/^/    /'
+              offenders=$((offenders + 1))
+            fi
+          done < <(git rev-list "$BASE_SHA".."$HEAD_SHA")
+          [ "$offenders" -eq 0 ] && echo "clean" || status=1
+
+          if [ "$status" -ne 0 ]; then
+            cat >&2 <<'MSG'
+
+          CLAUDE.md: "Commits/PRs. Do not add a Co-Authored-By: Claude trailer."
+          The same rule covers the "Generated with Claude Code" footer.
+
+          To fix a PR body: edit it. Note that `gh pr edit --body-file` can fail
+          silently on this repo with a Projects-classic GraphQL error; use
+            gh api -X PATCH repos/OWNER/REPO/pulls/N -F body=@file
+          and re-read the body afterwards to confirm it landed.
+
+          To fix commit messages: `git rebase -i` and reword, or for a whole
+          branch use `git filter-branch --msg-filter`. Run scripts/setup-hooks.sh
+          so the local hook keeps it from happening again.
+          MSG
+          fi
+          exit "$status"
