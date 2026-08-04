@@ -1,0 +1,94 @@
+/* ===========================================================================
+   SUBAY design tokens - the single source for palette, type and elevation.
+   ---------------------------------------------------------------------------
+   Imported by BOTH skins so a colour is picked once and can never drift:
+
+     static/admin/css/subay.css    the Django-admin reskin
+     static/public/css/subay-public.css   landing, protocol, sign-in
+
+   Rules the tokens encode:
+     - Teal is the ONLY interactive colour. Amber / coral / violet carry status
+       and never appear on a control.
+     - Every number is IBM Plex Mono with tabular figures.
+     - Cards get a 1px line, not a shadow. Shadow is for things that overlay.
+     - --subay-ink-3 (#667874, 5.0:1 on white) is the floor for text that
+       carries meaning; nothing meaningful goes lighter or below 12px.
+
+   Fonts load from Google Fonts. The deployment box is localhost-only, so if it
+   has no outbound network the three families fall back to the system stacks
+   below. To self-host, drop the woff2 files under static/subay/fonts/ and swap
+   the @import for @font-face rules.
+   =========================================================================== */
+
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap");
+
+:root {
+  /* Brand - teal is the ONLY interactive colour. */
+  --subay-teal-700: #0e5a51;
+  --subay-teal-600: #12756a;
+  --subay-teal-500: #1a9083;
+  --subay-teal-100: #d7ede8;
+  --subay-teal-50:  #eef7f5;
+
+  /* Status - never used on a control. */
+  --subay-amber-700: #8a5200;
+  --subay-amber-600: #b26b00;
+  --subay-amber-100: #faebd5;
+  --subay-coral-700: #8e3624;
+  --subay-coral-600: #b3452f;
+  --subay-coral-100: #fbe4de;
+  --subay-violet-600: #5a4bb5;
+  --subay-violet-100: #e9e6fa;
+
+  /* Neutrals */
+  --subay-canvas:      #f5f8f7;
+  --subay-surface:     #ffffff;
+  --subay-surface-2:   #fbfcfc;
+  --subay-sunken:      #eef3f1;
+  --subay-selected:    #eef7f5;
+  --subay-line:        #e1e9e6;
+  --subay-line-soft:   #eef3f1;
+  --subay-line-strong: #cbd8d4;
+  --subay-ink:   #0d1a18;
+  --subay-ink-2: #34433f;
+  --subay-ink-3: #667874;   /* the floor for text that carries meaning */
+
+  /* The inverted panel used by the landing hero and the sign-in rail. */
+  --subay-panel-dark: #1a1e1d;
+  --subay-panel-code: #111b19;
+  --subay-panel-line: #24322f;
+  --subay-on-panel:   #e8f0ee;
+  --subay-on-panel-2: #93a6a2;
+  --subay-on-panel-3: #6e837e;
+
+  /* Type */
+  --subay-font-ui:      "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --subay-font-mono:    "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --subay-font-display: "Instrument Serif", Georgia, serif;
+
+  --subay-radius-sm: 6px;
+  --subay-radius:    10px;
+  --subay-radius-lg: 14px;
+  --subay-shadow-sm: 0 1px 2px rgba(13, 40, 36, .06);
+  --subay-shadow:    0 2px 8px -2px rgba(13, 40, 36, .10), 0 8px 24px -8px rgba(13, 40, 36, .12);
+}
+
+/* Dark mode is charcoal, not near-black - a clinical screen is read for hours
+   and true black at this contrast produces halation on thin type. */
+html[data-theme="dark"] {
+  --subay-canvas:      #1c1f1e;
+  --subay-surface:     #262a29;
+  --subay-surface-2:   #212524;
+  --subay-sunken:      #2f3433;
+  --subay-selected:    #26332f;
+  --subay-line:        #3a403e;
+  --subay-line-soft:   #2e3433;
+  --subay-line-strong: #4c5452;
+  --subay-ink:   #e8f0ee;
+  --subay-ink-2: #c4d2cf;
+  --subay-ink-3: #93a6a2;
+
+  --subay-teal-600: #45bca8;
+  --subay-teal-700: #5fcdb9;
+  --subay-teal-100: #26332f;
+}

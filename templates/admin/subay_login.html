@@ -1,0 +1,114 @@
+{% extends "public/auth_base.html" %}
+{% load i18n %}
+
+{% comment %}
+SubayAdminSite.login_template points here (see registry/sites.py).
+
+django-otp's OTPAdminSite solicits the token on the SAME request as the
+credentials - OTPAdminAuthenticationForm carries username, password, otp_device
+and otp_token together. So this is one screen, not the password-then-code pair a
+hosted SaaS would show; splitting it would mean holding half-authenticated state
+between requests, which is a new attack surface for no gain on a localhost-only
+box. The token field is styled as the focal control so the shape still reads as
+"credentials, then the code".
+
+otp_device only renders once the form has a user attached (django-otp populates
+its choices in that pass), which is why it is guarded exactly as the vendored
+template guards it.
+{% endcomment %}
+
+{% block title %}{% translate "Sign in" %} | SUBAY{% endblock %}
+
+{% block auth_content %}
+<div class="auth-form">
+  <h1>{% translate "Sign in" %}</h1>
+  <p class="sub">
+    {% translate "Use your SPMC registry account. Two-factor is required - have your authenticator open." %}
+  </p>
+
+  {% if form.non_field_errors %}
+    {% for error in form.non_field_errors %}
+      <p class="errornote">{{ error }}</p>
+    {% endfor %}
+  {% elif form.errors %}
+    <p class="errornote">
+      {% blocktranslate count counter=form.errors.items|length %}Please correct the error below.{% plural %}Please correct the errors below.{% endblocktranslate %}
+    </p>
+  {% endif %}
+
+  {% if user.is_authenticated %}
+    <p class="errornote">
+      {% blocktranslate trimmed %}
+        You are authenticated as {{ username }}, but are not authorized to access
+        this page. Would you like to login to a different account?
+      {% endblocktranslate %}
+    </p>
+  {% endif %}
+
+  <form action="{{ app_path }}" method="post" id="login-form">{% csrf_token %}
+    <div class="field">
+      {{ form.username.errors }}
+      <label for="{{ form.username.id_for_label }}">{% translate "Username" %}</label>
+      {{ form.username }}
+    </div>
+
+    <div class="field">
+      {{ form.password.errors }}
+      <label for="{{ form.password.id_for_label }}">{% translate "Password" %}</label>
+      {{ form.password }}
+    </div>
+
+    {% if form.get_user %}
+      <div class="field">
+        {{ form.otp_device.errors }}
+        <label for="{{ form.otp_device.id_for_label }}">{% translate "Authenticator device" %}</label>
+        {{ form.otp_device }}
+      </div>
+    {% endif %}
+
+    <div class="field field-token">
+      {{ form.otp_token.errors }}
+      <label for="{{ form.otp_token.id_for_label }}">{% translate "Six-digit code" %}</label>
+      {{ form.otp_token }}
+      <p class="field-help">
+        {% translate "The code shown for SUBAY in your authenticator app. It changes every 30 seconds." %}
+      </p>
+    </div>
+
+    <input type="hidden" name="next" value="{{ next }}">
+
+    <button type="submit" class="btn btn-primary btn-lg btn-block">{% translate "Verify and sign in" %}</button>
+
+    {% if form.get_user %}
+      <button type="submit" name="otp_challenge" value="1" class="btn btn-lg btn-block" style="margin-top:10px">
+        {% translate "Send a challenge to this device" %}
+      </button>
+    {% endif %}
+
+    {% url 'admin_password_reset' as password_reset_url %}
+    {% if password_reset_url %}
+      <p class="field-help" style="text-align:center;margin-top:16px">
+        <a href="{{ password_reset_url }}">{% translate "Forgotten your password or username?" %}</a>
+      </p>
+    {% endif %}
+  </form>
+
+  <div class="aside">
+    <div class="aside-head">
+      <span class="ico ico-warning" aria-hidden="true"></span>
+      {% translate "Can't get a code?" %}
+    </div>
+    <p>
+      {% blocktranslate trimmed %}
+        Codes are time-based - if yours is always rejected, the device clock is
+        probably out of sync. Accounts are created and re-issued by the data
+        manager in person; there is no self-service reset on a self-hosted box.
+      {% endblocktranslate %}
+    </p>
+  </div>
+
+  <p class="field-help" style="text-align:center;margin-top:22px">
+    <a href="{% url 'public:landing' %}">{% translate "Back to the overview" %}</a>
+  </p>
+</div>
+{% endblock %}
