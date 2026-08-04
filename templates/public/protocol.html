@@ -1,0 +1,133 @@
+{% extends "public/base.html" %}
+
+{% block title %}Study protocol - SUBAY{% endblock %}
+
+{% block body %}
+<a class="skip-link" href="#main">Skip to content</a>
+{% include "public/_topnav.html" %}
+
+<main id="main" class="wrap-narrow">
+  <div class="doc-head">
+    <span class="doc-eyebrow">Study protocol · operational summary</span>
+    <h1 class="display">Cytomegalovirus after kidney transplantation</h1>
+    <p class="lede">
+      A prospective observational cohort at Southern Philippines Medical Center.
+      {{ target_recipients }} adult kidney-transplant recipients are followed for
+      {{ followup_days }} days after transplant, with viral load, serology, drug
+      exposure and renal function captured at {{ timepoint_count }} fixed timepoints.
+    </p>
+    <p class="doc-note">
+      Funded by DOST-PCHRD. Approved by the SPMC Institutional Review Board. This
+      page is the operational summary the registry enforces - it is not the full
+      protocol document. Every threshold quoted below is read from the registry's
+      own constants, so this page cannot drift from what the software does.
+    </p>
+  </div>
+
+  <div class="stat-strip">
+    {% for stat in stats %}
+      <div class="stat">
+        <div class="n">{{ stat.n }}</div>
+        <div class="label">{{ stat.label }}</div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <section class="doc">
+    <h2>The visit spine</h2>
+    <p class="section-note">
+      {{ timepoint_count }} timepoints, all derived from <span class="mono">kt_date</span>. A
+      clinic or lab closure moves the expected date forward to the first day both
+      operate; the protocol day itself never moves. A draw landing more than
+      +{{ visit_cap_days }} days past nominal is recorded as a missed visit rather
+      than being quietly accepted.
+    </p>
+    <div class="table-scroll">
+      <table class="spine">
+        <thead>
+          <tr>
+            <th scope="col">Timepoint</th>
+            <th scope="col">Protocol day</th>
+            <th scope="col">Window</th>
+            <th scope="col">Collected</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for visit in spine %}
+            <tr>
+              <td class="mono">{{ visit.timepoint }}</td>
+              <td class="mono-quiet">day {{ visit.offset }}</td>
+              <td class="mono-quiet">{{ visit.window }}</td>
+              <td>{{ visit.collected }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="doc">
+    <h2>Risk strata</h2>
+    <p class="section-note">
+      Assigned from the donor and recipient CMV serostatus recorded at transplant
+      - what the clinicians acted on, not a later assay. The stratum stays
+      undetermined while either value is blank; it is never inferred. Counts are
+      of the {{ enrolled_recipients }} recipient{{ enrolled_recipients|pluralize }}
+      on the register today.
+    </p>
+    <div class="tiles">
+      {% for stratum in strata %}
+        <div class="tile">
+          <div class="tile-head">
+            <span class="pill pill-{{ stratum.key }}">{{ stratum.code }}</span>
+            <span class="name">{{ stratum.name }}</span>
+            <span class="n">n = {{ stratum.n }}</span>
+          </div>
+          <p>{{ stratum.body }}</p>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="doc">
+    <h2>Assays and thresholds</h2>
+    <p class="section-note">
+      Every cutoff below is a named constant in the registry, not a number typed
+      per result. Changing one is a protocol amendment, and the figures on this
+      page are read from those constants at render time.
+    </p>
+    <div class="tiles">
+      {% for assay in assays %}
+        <div class="tile">
+          <h3>{{ assay.name }}</h3>
+          <div class="cut">{{ assay.cutoff }}</div>
+          <p>{{ assay.body }}</p>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-eyebrow">Rules the registry refuses to bend</div>
+    <div class="panel-grid">
+      {% for rule in rules %}
+        <div>
+          <h3>{{ rule.title }}</h3>
+          <p>{{ rule.body }}</p>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <p class="doc-note">
+    Questions about the protocol go to the principal investigator. Questions
+    about a specific record go to the data manager - every field in the registry
+    carries an audit row naming who entered it and who verified it.
+  </p>
+</main>
+
+<footer class="site-footer">
+  <span>SUBAY - Surveillance &amp; Unified Bioarchive for Antiviral nephrologY</span>
+  <span class="right">Self-hosted · localhost-only · SPMC</span>
+</footer>
+{% endblock %}

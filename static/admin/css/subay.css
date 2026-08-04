@@ -1,267 +1,363 @@
-/* SUBAY admin reskin — zero-dependency theme via Django admin CSS custom
-   properties. Cosmetic only: no markup forked beyond branding, no JS, no new
-   dependency. Override the documented :root vars and the default admin styling
-   follows. */
+/* ===========================================================================
+   SUBAY admin reskin - Django-admin surface of the design system.
+   ---------------------------------------------------------------------------
+   Cosmetic only: no markup forked beyond branding, no JS, no new dependency.
+   The palette lives in static/subay/css/tokens.css (shared with the public
+   pages); this file only maps those tokens onto the custom properties Django
+   documents, then trims the handful of stock rules that fight the system.
 
-:root {
-  /* Brand: a soft teal / mint pastel. Header and section captions are pastel
-     mint with dark-mint text (icons inherit that colour via currentColor); the
-     primary is a softened mint-teal that still clears AA on white; the accent is
-     a soft coral for warning verbs. */
-  --primary: #2b7669;
-  --secondary: #2b7669;
-  --accent: #d97a52;
+   The sign-in page is NOT styled here - SubayAdminSite.login_template points at
+   admin/subay_login.html, which is a standalone split-panel screen carrying its
+   own stylesheet.
+   =========================================================================== */
 
-  --header-bg: #cbe9e1;
-  --header-color: #22534a;
-  --header-branding-color: #22534a;
-  --header-link-color: #3d726a;
+@import url("../../subay/css/tokens.css");
+@import url("../../subay/css/icons.css");
 
-  --link-fg: #2b7669;
-  --link-hover-color: #1f5a4f;
-  --link-selected-fg: #1f5a4f;
+/* ------------------------------------------- MAP ONTO DJANGO ADMIN'S VARS -- */
+/* Django admin documents these custom properties; overriding them reskins the
+   whole admin with no forked templates. Both themes read the same --subay-*
+   names, so the dark block below only restates what genuinely inverts rather
+   than re-picking the palette. */
 
-  --button-bg: #2b7669;
-  --button-hover-bg: #1f5a4f;
-  --default-button-bg: #2b7669;
-  --default-button-hover-bg: #1f5a4f;
+html[data-theme="light"], :root {
+  --primary:   var(--subay-teal-600);
+  --secondary: var(--subay-teal-700);
+  --accent:    var(--subay-coral-600);
+  --primary-fg: #fff;
 
-  --object-tools-bg: #2b7669;
-  --object-tools-hover-bg: #1f5a4f;
+  --body-fg: var(--subay-ink);
+  --body-bg: var(--subay-surface);
+  --body-quiet-color:  var(--subay-ink-3);
+  --body-medium-color: var(--subay-ink-2);
+  --body-loud-color:   var(--subay-ink);
 
-  /* Calmer surfaces + roomier rhythm for dense clinical forms. */
-  --body-bg: #eef7f4;
-  --body-fg: #26332f;
-  --body-quiet-color: #5f736e;
-  --hairline-color: #dcebe6;
-  --border-color: #cfe3dd;
-  --darkened-bg: #e4f1ed;
-  --selected-row: #fbf1e9;
-  --message-success-bg: #e6f4ec;
+  --header-bg:              #0e1f1c;
+  --header-color:           #b7c8c4;
+  --header-branding-color:  #eaf3f1;
+  --header-link-color:      #eaf3f1;
+
+  --breadcrumbs-bg:      var(--subay-surface-2);
+  --breadcrumbs-fg:      var(--subay-ink-3);
+  --breadcrumbs-link-fg: var(--subay-teal-600);
+
+  --link-fg:          var(--subay-teal-600);
+  --link-hover-color: var(--subay-teal-700);
+  --link-selected-fg: var(--subay-teal-700);
+
+  --hairline-color: var(--subay-line-soft);
+  --border-color:   var(--subay-line-strong);
+
+  --error-fg: var(--subay-coral-600);
+  --message-success-bg: var(--subay-teal-100);
+  --message-warning-bg: var(--subay-amber-100);
+  --message-error-bg:   var(--subay-coral-100);
+
+  --darkened-bg: var(--subay-surface-2);
+  --selected-bg: var(--subay-sunken);
+  --selected-row: var(--subay-selected);
+
+  --button-fg: #fff;
+  --button-bg: var(--subay-teal-600);
+  --button-hover-bg: var(--subay-teal-700);
+  --default-button-bg: var(--subay-teal-600);
+  --default-button-hover-bg: var(--subay-teal-700);
+  --close-button-bg: var(--subay-ink-3);
+  --close-button-hover-bg: var(--subay-ink-2);
+  --delete-button-bg: var(--subay-coral-600);
+  --delete-button-hover-bg: var(--subay-coral-700);
+
+  --object-tools-bg: var(--subay-teal-600);
+  --object-tools-hover-bg: var(--subay-teal-700);
+
+  --font-family-primary: var(--subay-font-ui);
+  --font-family-monospace: var(--subay-font-mono);
 }
 
-/* System font stack — sharper than the default and zero web-font cost. */
+html[data-theme="dark"] {
+  --button-fg: #06201c;
+  --object-tools-fg: #06201c;
+  --body-bg: var(--subay-surface);
+  --body-fg: var(--subay-ink);
+}
+
+/* ------------------------------------------------------------ TYPOGRAPHY -- */
+
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
-    Arial, sans-serif;
+  font-family: var(--subay-font-ui);
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Branding: stack the long subtitle under the wordmark. */
-#site-name a { font-weight: 700; letter-spacing: 0.5px; }
+/* Every number is monospaced with tabular figures so columns line up. */
+#changelist table td,
+#changelist table th,
+.field-value input,
+.readonly,
+.tile-big-count,
+.bucket-count,
+code, pre {
+  font-variant-numeric: tabular-nums;
+}
+#result_list td:has(> a[href*="/change/"]),
+.field-subject_id input,
+.field-drawn_date input,
+.field-kt_date input,
+.field-actual_visit_date input {
+  font-family: var(--subay-font-mono);
+}
+
+h1 {
+  font-weight: 600;
+  font-size: 1.35rem;
+  letter-spacing: -.01em;
+  color: var(--subay-ink);
+}
+
+/* --------------------------------------------------------------- HEADER -- */
+
+#header {
+  padding: 14px 28px;
+  border-bottom: 1px solid transparent;
+}
+#branding { display: flex; flex-direction: column; gap: 1px; }
+#site-name { margin: 0; }
+#site-name a:link, #site-name a:visited {
+  font-weight: 600;
+  font-size: 1.05rem;
+  letter-spacing: .02em;
+  color: var(--subay-teal-500);
+}
 #subay-subtitle {
   font-size: 11px;
-  color: var(--header-link-color);
-  opacity: 0.85;
-  margin-top: 2px;
+  color: #67807a;
+  opacity: 1;
+  margin-top: 0;
+}
+#user-tools { text-transform: none; letter-spacing: 0; font-size: 12px; }
+#user-tools a, #logout-form button { border-bottom: none; text-decoration: underline; text-underline-offset: 3px; }
+
+/* ---------------------------------------------------------- BREADCRUMBS -- */
+/* The stock dark-navy bar matched nothing. Make it a quiet strip. */
+
+div.breadcrumbs {
+  padding: 11px 28px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--subay-line);
 }
 
-/* Softer cards for changelist/module blocks. */
+/* ----------------------------------------------------- CARDS / MODULES --- */
+
+#content { padding: 22px 28px; }
+
 .module {
-  border-radius: 8px;
-  box-shadow: 0 1px 2px rgba(13, 59, 67, 0.06);
+  background: var(--subay-surface);
+  border: 1px solid var(--subay-line);
+  border-radius: var(--subay-radius-lg);
+  box-shadow: var(--subay-shadow-sm);
   overflow: hidden;
+  margin-bottom: 20px;
 }
 .module caption,
-.inline-group h2 {
-  border-radius: 8px 8px 0 0;
+.module h2,
+.inline-group h2,
+fieldset .fieldset-heading {
+  background: var(--subay-surface-2);
+  color: var(--subay-ink);
+  border: none;
+  border-bottom: 1px solid var(--subay-line);
+  border-radius: 0;
+  padding: 12px 16px;
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: none;
 }
+.module caption a.section:link,
+.module caption a.section:visited { color: var(--subay-ink); }
 
-/* Buttons: rounded, less shouty. */
+thead th, tfoot td {
+  background: var(--subay-surface-2);
+  color: var(--subay-ink-3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--subay-line);
+  border-top: none;
+}
+td, th { padding: 11px 16px; border-bottom: 1px solid var(--subay-line-soft); font-size: 13px; }
+
+/* Changelists carry many more columns than an inline or a detail table, and the
+   filter rail takes 240px out of the row. At 16px of side padding the recipient
+   list needs 910px inside an 813px box, so the last column disappears behind
+   the rail and only a horizontal scroll brings it back. Tighter side padding
+   fits the whole table on a 1440 screen; .results keeps overflow-x:auto as the
+   fallback for a genuinely wider changelist. */
+#changelist table td,
+#changelist table th { padding-left: 10px; padding-right: 10px; }
+
+/* A long header such as "SEQUENCING INCLUDED" over a one-glyph boolean column
+   sets the column's width on its own. Letting the label wrap costs one row of
+   header height and buys back more than a hundred pixels of table. */
+#changelist table thead th,
+#changelist table thead th a { white-space: normal; }
+
+/* Zebra striping fights the eye on long clinical tables - drop it. */
+tr:nth-child(odd), tr:nth-child(even) { background: var(--subay-surface); }
+#changelist table tbody tr:hover { background: var(--subay-selected); }
+#changelist tbody tr.selected,
+#changelist tbody tr:has(.action-select:checked) { background: var(--subay-selected); }
+
+/* -------------------------------------------------------------- CONTROLS -- */
+
 .button, input[type=submit], input[type=button], .submit-row input, a.button {
-  border-radius: 6px;
+  border-radius: 8px;
+  padding: 0 16px;
+  height: 36px;
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: var(--subay-shadow-sm);
+}
+.submit-row {
+  background: var(--subay-surface);
+  border: 1px solid var(--subay-line);
+  border-radius: var(--subay-radius-lg);
+  padding: 14px 16px;
+}
+.submit-row input.default { text-transform: none; }
+/* One destructive path, and it is never a filled button. */
+.submit-row a.deletelink,
+.delete-confirmation form input[type="submit"] {
+  background: var(--subay-surface);
+  color: var(--subay-coral-600);
+  border: 1px solid #e7c9c1;
+  border-radius: 8px;
+}
+.submit-row a.deletelink:hover,
+.delete-confirmation form input[type="submit"]:hover {
+  background: var(--subay-coral-100);
+  color: var(--subay-coral-700);
 }
 
-/* Result rows: gentler hover for long data-entry sessions. */
-#changelist table tbody tr:hover {
-  background: var(--selected-row);
+input:not([type]), input[type=text], input[type=password], input[type=email],
+input[type=url], input[type=number], input[type=tel], input[type=date],
+textarea, select, .vTextField {
+  border: 1px solid var(--subay-line-strong);
+  border-radius: 8px;
+  padding: 7px 11px;
+  font-size: 13px;
+  background: var(--subay-surface);
+  color: var(--subay-ink);
+}
+input:focus, textarea:focus, select:focus, .vTextField:focus {
+  border-color: var(--subay-teal-600);
+  box-shadow: 0 0 0 3px var(--subay-teal-100);
+  outline: none;
 }
 
-/* Minimalist icons (Aiko set). Each SVG is applied as a mask so the glyph is a
-   pure silhouette painted with currentColor — it inherits the surrounding text
-   colour and the clinical-teal theme, in light or dark, with no per-file fill.
-   Cosmetic only: purely decorative, always paired with a text label and
-   aria-hidden, so screen readers and the no-CSS fallback lose nothing. */
-.ico {
-  display: inline-block;
-  width: 1em;
-  height: 1em;
-  vertical-align: -0.15em;
-  background-color: currentColor;
-  -webkit-mask: center / contain no-repeat;
-  mask: center / contain no-repeat;
+.object-tools a:link, .object-tools a:visited {
+  border-radius: 8px;
+  padding: 6px 13px;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
 }
-/* Page-title icon: a touch larger, muted so it frames rather than shouts. */
-.ico-title {
-  width: 1.15em;
-  height: 1.15em;
-  vertical-align: -0.18em;
-  margin-right: 0.4em;
-  color: var(--primary);
+
+label { color: var(--subay-ink-2); font-weight: 500; font-size: 12px; }
+.help, p.help, form p.help, div.help, form div.help, div.help li {
+  font-size: 12px;              /* 11px at the old grey failed AA */
+  color: var(--subay-ink-3);
 }
-/* Inline action-link icon: small, sits just before the link text. */
-.ico-action { margin-right: 0.3em; width: 0.95em; height: 0.95em; }
 
-.ico-team       { -webkit-mask-image: url("../img/icons/team.svg");            mask-image: url("../img/icons/team.svg"); }
-.ico-calendar   { -webkit-mask-image: url("../img/icons/calendar.svg");        mask-image: url("../img/icons/calendar.svg"); }
-.ico-alarm      { -webkit-mask-image: url("../img/icons/alarm-warning.svg");   mask-image: url("../img/icons/alarm-warning.svg"); }
-.ico-shield     { -webkit-mask-image: url("../img/icons/shield-check.svg");    mask-image: url("../img/icons/shield-check.svg"); }
-.ico-check      { -webkit-mask-image: url("../img/icons/check.svg");           mask-image: url("../img/icons/check.svg"); }
-.ico-warning    { -webkit-mask-image: url("../img/icons/error-warning.svg");   mask-image: url("../img/icons/error-warning.svg"); }
-.ico-ok         { -webkit-mask-image: url("../img/icons/checkbox-circle.svg"); mask-image: url("../img/icons/checkbox-circle.svg"); }
+/* --------------------------------------------------------- NAV SIDEBAR --- */
 
-/* Semantic accents so the two action verbs read at a glance. */
-.ico-warning { color: var(--accent); }
-.ico-ok      { color: var(--primary); }
+#nav-sidebar {
+  background: var(--subay-surface-2);
+  border-right: 1px solid var(--subay-line);
+}
+#nav-sidebar .module { border: none; border-radius: 0; box-shadow: none; margin-bottom: 8px; }
+#nav-sidebar .module caption {
+  background: transparent;
+  border-bottom: none;
+  font-size: 10px;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  color: var(--subay-ink-3);
+  padding: 14px 16px 4px;
+}
+#nav-sidebar .module th { border-bottom: none; padding: 6px 16px; }
+#nav-sidebar .current-model { background: var(--subay-selected); }
+#nav-filter { border-radius: 8px; padding: 7px 10px; }
 
-/* Workflow-section icons on the grouped index. Zero template fork: Django wraps
-   each section in `div.app-<slug>` (slug = _section() app_label), so the glyph
-   is injected before the caption link purely in CSS. Same currentColor mask, so
-   it takes the caption's own light-on-teal colour with no extra styling. */
+/* --------------------------------------------------- DASHBOARD TILES ----- */
+/* The stock `.dashboard #content { width: 600px }` is a content-box, so 260px
+   flex-basis tiles (260 + 32 padding + 2 border = 294; two = 604 > 600) could
+   never sit two-up. Grid fixes it for good. */
+
+.dashboard #content { width: auto; max-width: 1200px; }
+.colMS { margin-right: 0; }
+#content-related { float: none; width: auto; margin: 0 0 20px; background: transparent; }
+
+.subay-dashboard {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+  margin: 0 0 22px;
+}
+.dashboard-tile {
+  background: var(--subay-surface);
+  border: 1px solid var(--subay-line);
+  border-radius: var(--subay-radius-lg);
+  box-shadow: var(--subay-shadow-sm);
+  padding: 18px 20px;
+}
+.dashboard-tile .tile-heading {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--subay-ink-3);
+  margin: 0 0 12px;
+}
+.tile-big-count { font-family: var(--subay-font-mono); font-size: 34px; font-weight: 500; letter-spacing: -.03em; }
+.tile-big-count a { color: var(--subay-ink); }
+.dashboard-tile .tile-link, .dashboard-tile .tile-total, .dashboard-tile .tile-empty {
+  font-size: 12px; color: var(--subay-ink-3);
+}
+.tile-bucket { border-bottom: 1px solid var(--subay-line-soft); }
+.tile-bucket .bucket-count { font-family: var(--subay-font-mono); color: var(--subay-ink); }
+
+/* Status pills - one shape, one meaning per colour. */
+.sched-count { border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 500; }
+.sched-overdue  { background: var(--subay-coral-100); color: var(--subay-coral-700); }
+.sched-missed   { background: var(--subay-sunken);    color: var(--subay-ink-3); }
+.sched-due_soon { background: var(--subay-amber-100); color: var(--subay-amber-700); }
+.tile-gap { border-bottom: 1px solid var(--subay-line-soft); }
+.tile-gap .gap-meta { font-family: var(--subay-font-mono); font-size: 11px; color: var(--subay-ink-3); }
+.tile-gap.gap-overdue a { color: var(--subay-coral-600); }
+
+/* ------------------------------------------------- SECTION-CAPTION ICONS -- */
+/* The `.ico*` classes come from subay/css/icons.css (shared with the public
+   pages). These masks are admin-only: they decorate the workflow-section
+   captions on the index, keyed by the app label SubayAdminSite emits. */
+
 #content-main .module > table > caption > a.section::before {
   content: "";
   display: inline-block;
-  width: 1.05em;
-  height: 1.05em;
-  margin-right: 0.5em;
+  width: 1.05em; height: 1.05em;
+  margin-right: .55em;
   vertical-align: -0.16em;
   background-color: currentColor;
-  /* Longhands, not the `mask` shorthand: the shorthand would reset mask-image
-     to none at this rule's (ID-bearing) specificity and beat the per-section
-     mask-image rules below, blanking every section icon. */
+  opacity: .55;
   -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
   -webkit-mask-position: center;  mask-position: center;
   -webkit-mask-size: contain;     mask-size: contain;
 }
-.app-subjects        caption a.section::before { -webkit-mask-image: url("../img/icons/team.svg");        mask-image: url("../img/icons/team.svg"); }
-.app-visit_spine     caption a.section::before { -webkit-mask-image: url("../img/icons/calendar.svg");    mask-image: url("../img/icons/calendar.svg"); }
-.app-labs            caption a.section::before { -webkit-mask-image: url("../img/icons/flask.svg");       mask-image: url("../img/icons/flask.svg"); }
-.app-biobank_ledger  caption a.section::before { -webkit-mask-image: url("../img/icons/database.svg");    mask-image: url("../img/icons/database.svg"); }
-.app-genotyping      caption a.section::before { -webkit-mask-image: url("../img/icons/code.svg");        mask-image: url("../img/icons/code.svg"); }
-.app-safety          caption a.section::before { -webkit-mask-image: url("../img/icons/shield-star.svg"); mask-image: url("../img/icons/shield-star.svg"); }
-.app-review          caption a.section::before { -webkit-mask-image: url("../img/icons/shield-check.svg");mask-image: url("../img/icons/shield-check.svg"); }
-.app-administration  caption a.section::before { -webkit-mask-image: url("../img/icons/settings.svg");    mask-image: url("../img/icons/settings.svg"); }
-
-/* Admin landing dashboard (issue #16): derived tile panel above the workflow
-   grid. Pastel cards on the themed surfaces, currentColor icons - no JS, no new
-   asset. Responsive: tiles wrap; each bucket row wraps its count + label. */
-.subay-dashboard {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  margin: 0 0 22px;
-}
-.dashboard-tile {
-  flex: 1 1 260px;
-  background: var(--body-bg);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  box-shadow: 0 1px 2px rgba(13, 59, 67, 0.06);
-  padding: 14px 16px 12px;
-}
-.dashboard-tile .tile-heading {
-  margin: 0 0 10px;
-  font-size: 14px;
-  color: var(--header-color);
-  display: flex;
-  align-items: center;
-  gap: 0.35em;
-}
-.tile-buckets {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.tile-bucket {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 3px 0;
-  border-bottom: 1px solid var(--hairline-color);
-}
-.tile-bucket .bucket-count {
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--primary);
-  min-width: 2.2em;
-  text-align: right;
-  order: 2;
-}
-.tile-bucket .bucket-label {
-  color: var(--body-fg);
-  order: 1;
-}
-.dashboard-tile .tile-total {
-  margin: 10px 0 0;
-  font-size: 12px;
-  color: var(--body-quiet-color);
-}
-/* Operational count tiles (T2/T3): one big deep-linked number + a link. */
-.tile-big-count {
-  margin: 6px 0 4px;
-  font-size: 34px;
-  font-weight: 700;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-.tile-big-count a { color: var(--primary); text-decoration: none; }
-.tile-big-count a:hover { text-decoration: underline; }
-.dashboard-tile .tile-link {
-  margin: 0;
-  font-size: 12px;
-}
-/* Schedule tile (T1): a bucket summary line + a compact gap list. */
-.tile-schedule-summary {
-  margin: 0 0 8px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.sched-count {
-  font-size: 11px;
-  font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 10px;
-  background: var(--darkened-bg);
-  color: var(--body-fg);
-}
-.sched-overdue { background: #f6e2d8; color: #8a3d1f; }   /* soft coral */
-.sched-missed  { background: #efe3d6; color: #6b4a2a; }
-.sched-due_soon { background: var(--message-success-bg); color: var(--header-color); }
-.tile-gaps {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  max-height: 220px;
-  overflow-y: auto;
-}
-.tile-gap {
-  padding: 4px 0;
-  border-bottom: 1px solid var(--hairline-color);
-  display: flex;
-  flex-direction: column;
-}
-.tile-gap a { text-decoration: none; font-weight: 600; }
-.tile-gap .gap-meta { font-size: 11px; color: var(--body-quiet-color); }
-.tile-gap.gap-overdue a { color: var(--accent); }
-.dashboard-tile .tile-empty {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: var(--body-quiet-color);
-}
-
-/* Login page: show the full SUBAY logo lockup inside the (white) login card and
-   drop the header there, so the sign-in screen is a clean centred card. The
-   header keeps the themed text wordmark everywhere else; the poster lockup only
-   reads well at this size, so it lives here. Zero markup fork: the logo rides an
-   ::before on the existing #content-main, keyed off the body.login class the
-   admin already sets. */
-body.login #header { display: none; }
-body.login #content-main::before {
-  content: "";
-  display: block;
-  width: 100%;
-  height: 132px;
-  margin: 4px auto 22px;
-  background: center / contain no-repeat url("../img/subay-logo.png");
-}
+.app-subjects       caption a.section::before { -webkit-mask-image: url("../img/icons/team.svg");         mask-image: url("../img/icons/team.svg"); }
+.app-visit_spine    caption a.section::before { -webkit-mask-image: url("../img/icons/calendar.svg");     mask-image: url("../img/icons/calendar.svg"); }
+.app-labs           caption a.section::before { -webkit-mask-image: url("../img/icons/flask.svg");        mask-image: url("../img/icons/flask.svg"); }
+.app-biobank_ledger caption a.section::before { -webkit-mask-image: url("../img/icons/database.svg");     mask-image: url("../img/icons/database.svg"); }
+.app-genotyping     caption a.section::before { -webkit-mask-image: url("../img/icons/code.svg");         mask-image: url("../img/icons/code.svg"); }
+.app-safety         caption a.section::before { -webkit-mask-image: url("../img/icons/shield-star.svg");  mask-image: url("../img/icons/shield-star.svg"); }
+.app-review         caption a.section::before { -webkit-mask-image: url("../img/icons/shield-check.svg"); mask-image: url("../img/icons/shield-check.svg"); }
+.app-administration caption a.section::before { -webkit-mask-image: url("../img/icons/settings.svg");     mask-image: url("../img/icons/settings.svg"); }
