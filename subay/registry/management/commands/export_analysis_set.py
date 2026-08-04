@@ -150,6 +150,12 @@ SEROLOGY_COLUMNS = [
     ("igm_value", "d"),
     ("igm_status", "c"),
     ("igm_interpretation", "c"),  # materialized derived value (Slice 17)
+    # The earlier draw this row repeats, by export row id, or blank. The PI's rule
+    # is that a grayzone result is excluded from analysis until a repeat resolves
+    # it, and that exclusion happens in R against this file, so R has to be able to
+    # see the pair as a pair. Safe to publish: it is an internal row id pointing at
+    # the `id` column already in this file, carrying no calendar or subject fact.
+    ("repeats", "i"),
     ("day_offset", "i"),
 ]
 # Long viral-load series: one row per CMVQuantitative result (Slice 05). A
@@ -550,7 +556,9 @@ class Command(BaseCommand):
                 igm_cell = s.igm_interpretation or ""
                 w.writerow([s.id, parent_type, parent_id,
                             value_cell, s.result_status, igg_cell,
-                            igm_value_cell, s.igm_status, igm_cell, offset])
+                            igm_value_cell, s.igm_status, igm_cell,
+                            s.repeats_id if s.repeats_id is not None else "",
+                            offset])
 
     def _write_quantitatives(self, base):
         with (base / "cmvquantitative.csv").open("w", newline="") as fh:

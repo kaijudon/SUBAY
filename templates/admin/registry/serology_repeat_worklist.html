@@ -1,0 +1,53 @@
+{% extends "admin/base_site.html" %}
+
+{% block content_title %}{% if title %}<h1><span class="ico ico-title ico-alarm" aria-hidden="true"></span>{{ title }}</h1>{% endif %}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Home</a>
+  &rsaquo; Repeat-draw worklist
+</div>
+{% endblock %}
+
+{% block content %}
+<p>
+  Recipient serology draws whose IgG or IgM landed in the <strong>grayzone</strong>,
+  with nothing drawn yet to resolve them.
+  <strong>{{ total }}</strong> row{{ total|pluralize }} pending.
+  An equivocal result is a direction to draw again, not a serostatus: the subject
+  has no established status until a repeat settles it, and these draws are
+  excluded from the statistical analysis until then.
+  Recording the repeat clears the row. A repeat that is itself equivocal takes the
+  earlier draw's place here.
+</p>
+
+<div class="module">
+  {% if rows %}
+  <table>
+    <thead>
+      <tr>
+        <th>Draw</th><th>Recipient</th><th>Timepoint</th>
+        <th>IgG</th><th>IgM</th><th>Drawn</th><th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <th scope="row"><a href="{{ row.change_url }}">{{ row.label }}</a></th>
+        <td>{{ row.recipient|default:"-" }}</td>
+        <td>{{ row.timepoint_label }}</td>
+        <td>{{ row.igg_interpretation|default:"-" }}</td>
+        <td>{{ row.igm_interpretation|default:"-" }}</td>
+        <td>{{ row.drawn_date }}</td>
+        <td>
+          <a href="{{ row.repeat_url }}"><span class="ico ico-action ico-check" aria-hidden="true"></span>Record repeat draw</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="help"><span class="ico ico-ok" aria-hidden="true"></span> Nothing awaiting a repeat. Every grayzone draw has been drawn again.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -187,7 +187,10 @@ class CMVSerologyInline(admin.TabularInline):
     # puts columns out of reach entirely. save() fills the generation from the
     # draw date, and the serology change form is where it can be overridden and
     # where verification actually happens, so nothing is lost by omitting it here.
-    exclude = ("reagent_generation",)
+    # `repeats` is omitted for the same width reason, and for a second one: it is a
+    # select over every serology row in the register, which is unusable inline and
+    # is autocompleted on the serology change form instead.
+    exclude = ("reagent_generation", "repeats")
 
 
 class CMVQuantitativeInline(admin.TabularInline):
@@ -370,14 +373,30 @@ class CMVSerologyAdmin(_EditorDefaultedAdmin):
     list_display = (
         "id", "recipient_visit", "donor", "value", "igg_interpretation",
         "reagent_generation", "result_status",
-        "drawn_date", "verified_by", "is_verified",
+        "drawn_date", "repeat_status", "verified_by", "is_verified",
     )
-    autocomplete_fields = _LAB_SUBJECT_FKS
+    # `repeats` autocompletes against this same admin, which is why search_fields
+    # is here: a repeat is entered by finding the earlier draw by subject.
+    search_fields = ("recipient_visit__recipient__subject_id", "donor__subject_id")
+    autocomplete_fields = _LAB_SUBJECT_FKS + ("repeats",)
     list_filter = ("is_verified", "result_status", "reagent_generation")
     # Read against THIS ROW's reagent generation, which is why the generation is
     # shown beside them: a verifier signing off needs to see which ranges were
     # applied without knowing the 2026-06-03 advisory date by heart.
     readonly_fields = ("igg_interpretation", "igm_interpretation")
+
+    @admin.display(description="Repeat")
+    def repeat_status(self, obj):
+        """Words, not a boolean icon. Django renders a False BooleanField in
+        list_display as a red cross, and "this draw does not need repeating" is the
+        healthy state - the same misreading ticket 03 fixed for the interpretation
+        column. A blank cell for the ordinary case also keeps the eye on the few
+        rows that are actually pending."""
+        if obj.awaiting_repeat:
+            return "Awaiting repeat"
+        if obj.repeats_id:
+            return f"Repeats #{obj.repeats_id}"
+        return ""
 
 
 @admin.register(CMVQuantitative)
