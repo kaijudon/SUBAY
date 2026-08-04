@@ -65,6 +65,22 @@ def _derived_display(attr_name, *, boolean):
     return _wrapper
 
 
+# has_donor_serostatus_mismatch gets its own renderer rather than the boolean
+# icon. Two reasons, both about not alarming a reviewer over a healthy record.
+# The icon's polarity is inverted here: a green tick would mean "yes, mismatch"
+# (a problem) and a red cross would mean "no mismatch" (the normal, wanted state),
+# so a clean cohort renders as a column of red crosses. And since slice 17 the
+# property has three answers, where the third is "we could not compare these" -
+# the grey unknown icon reads as a missing value rather than as the deliberate
+# statement it is. Words carry both without the colour doing the wrong work.
+@admin.display(description="donor serostatus vs donor serology")
+def _donor_serostatus_mismatch_display(self, obj):
+    verdict = obj.has_donor_serostatus_mismatch
+    if verdict is None:
+        return "not comparable"
+    return "MISMATCH" if verdict else "agree"
+
+
 def _install_derived_displays(admin_class, *, boolean_fields=(), plain_fields=()):
     for name in boolean_fields:
         setattr(admin_class, name, _derived_display(name, boolean=True))
@@ -591,9 +607,12 @@ class ProtocolDeviationAdmin(SimpleHistoryAdmin):
 # severity_tier is a stored CharField, not a property, so it is left untouched.
 _install_derived_displays(
     RecipientAdmin,
-    boolean_fields=("has_donor_serostatus_mismatch",),
     plain_fields=("age", "risk_stratum", "cmv_episode_summary"),
 )
+# Attached under the property's own name so list_display / readonly_fields keys
+# stay unchanged, the same shadowing trick _derived_display uses.
+_donor_serostatus_mismatch_display.__name__ = "has_donor_serostatus_mismatch"
+RecipientAdmin.has_donor_serostatus_mismatch = _donor_serostatus_mismatch_display
 _install_derived_displays(
     RecipientVisitAdmin,
     boolean_fields=("closure_shifted",),

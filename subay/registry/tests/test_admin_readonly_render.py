@@ -19,7 +19,7 @@ from django.test import Client
 from django.urls import reverse
 from django_otp.plugins.otp_totp.models import TOTPDevice
 
-from subay.registry.models import CMVSerology, Recipient, RecipientVisit
+from subay.registry.models import CMVSerology, Donor, Recipient, RecipientVisit
 
 
 def _otp_client(user):
@@ -89,12 +89,22 @@ def test_recipient_add_form_shows_placeholder_not_none(admin_client):
     assert 'class="readonly">-</div>' in html  # placeholder is shown instead
 
 
-def test_recipient_add_form_boolean_renders_icon_not_false(admin_client):
-    """has_donor_serostatus_mismatch is False on a blank Recipient -> the No icon,
-    not the literal "False"."""
+def test_recipient_add_form_mismatch_reads_not_comparable_not_false(admin_client):
+    """A blank Recipient has no donor to compare against, so the flag says so.
+
+    This asserted the boolean No icon until slice 17 ticket 02. What #16/#19
+    established, that a derived value never renders as the literal "False", is
+    unchanged and still asserted below; only the rendering it was pinned to
+    moved. The icon stopped fitting for two reasons. Its polarity is inverted
+    here, since "no mismatch" is the healthy state yet draws the red cross, so a
+    clean cohort reads as a column of alarms. And the property now has a third
+    answer meaning "these were never compared", which the grey unknown icon
+    would report as a missing value rather than the deliberate statement it is.
+    """
     html = admin_client.get(reverse("admin:registry_recipient_add")).content.decode()
     assert 'class="readonly">False<' not in html  # #16/#19: no literal "False"
-    assert "icon-no.svg" in html  # the boolean No icon is rendered
+    assert "not comparable" in html
+    assert "icon-no.svg" not in html  # no red cross on a record with nothing wrong
 
 
 # --- #19: change-form derived booleans ------------------------------------
@@ -131,6 +141,44 @@ def test_serology_change_form_none_boolean_renders_unknown_icon(admin_client, se
     ).content.decode()
     assert 'class="readonly">None<' not in html
     assert "icon-unknown.svg" in html
+
+
+# --- slice 17 ticket 02: the mismatch flag's three answers on the change form
+
+
+@pytest.mark.parametrize(
+    "recorded,donor_value,expected",
+    [
+        ("POS", "0.50", "MISMATCH"),       # compared, and they clash
+        ("POS", "1.50", "agree"),          # compared, and they agree
+        ("POS", "1.00", "not comparable"), # equivocal donor result
+    ],
+)
+def test_recipient_change_form_states_the_mismatch_verdict_in_words(
+    db, admin_client, recorded, donor_value, expected
+):
+    """Words rather than a colour, because the colour would be backwards.
+
+    A green tick would mean "yes, mismatch" - the problem state - and the red
+    cross would mark the healthy record. The three answers also cannot survive a
+    two-colour icon: "we could not compare these" is a statement, not a gap.
+    """
+    d = Donor.objects.create(
+        subject_id="DCMVD01", date_of_birth=date(1975, 1, 1), sex="F"
+    )
+    CMVSerology.objects.create(
+        donor=d, value=Decimal(donor_value), drawn_date=date(2026, 7, 1)
+    )
+    r = Recipient.objects.create(
+        subject_id="SCMVR02", date_of_birth=date(1980, 1, 1), sex="M",
+        kt_date=date(2026, 8, 1), donor=d, donor_serostatus=recorded,
+    )
+    html = admin_client.get(
+        reverse("admin:registry_recipient_change", args=[r.pk])
+    ).content.decode()
+    assert expected in html
+    assert 'class="readonly">None<' not in html
+    assert 'class="readonly">False<' not in html
 
 
 # --- #18: page <title> is never blank -------------------------------------
