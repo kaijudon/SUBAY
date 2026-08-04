@@ -32,6 +32,12 @@ REAGENT_GENERATION_CHOICES = [
     (GEN2, "2nd generation (from 2026-06-03)"),
 ]
 
+# The only codes a band map can be keyed by. `choices` is a form-level guard, so
+# it says nothing about the shell and ingest paths; this is what the model's
+# CheckConstraint is written against, declared here so the constraint and the
+# interpreter read the same list rather than two copies of it.
+VALID_GENERATIONS = frozenset({GEN1, GEN2})
+
 # The advisory took effect ON this day, so the boundary is inclusive. Declared
 # once here; the interpretation rule and the backfill both read it.
 ADVISORY_EFFECTIVE = date(2026, 6, 3)
@@ -98,6 +104,14 @@ _IGM_BANDS = {
 def _interpret(value, bands, generation):
     if value is None:
         return None
+    if generation not in bands:
+        # Unreachable from a persisted row: the CheckConstraint on
+        # CMVSerology.reagent_generation rejects anything outside
+        # VALID_GENERATIONS. Kept so an in-memory object carrying a typo fails
+        # by name here rather than as a bare KeyError from the map lookup two
+        # frames down, which is what the admin changelist and the export
+        # actually surfaced.
+        raise ValueError(f"Unknown reagent generation {generation!r}")
     equivocal_from, reactive_from = bands[generation]
     if value >= reactive_from:
         return REACTIVE

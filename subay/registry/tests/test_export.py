@@ -43,6 +43,10 @@ from subay.registry.management.commands.export_analysis_set import (
     MRN_RX,
     NAME_RX,
 )
+from subay.registry.serology_ranges import (
+    ADVISORY_EFFECTIVE,
+    GEN2_IGG_EQUIVOCAL_FROM_AU_ML,
+)
 
 
 @pytest.fixture
@@ -245,6 +249,53 @@ def test_export_distinguishes_no_from_not_asked(seeded_baseline, tmp_path):
     assert row["has_diabetes"] == "false"
     assert row["has_hypertension"] == ""
     assert row["has_diabetes"] != row["has_hypertension"]
+
+
+def test_export_keeps_the_mismatch_flags_third_state_separable(seeded_baseline, tmp_path):
+    """Slice 17 ticket 02 gave has_donor_serostatus_mismatch a third answer, and
+    nothing in the export pinned what that answer becomes in the file.
+
+    The column previously wrote "false" for a pair it could not compare, which
+    asserted the two sides were checked and agreed. It now writes blank. Those
+    are different claims and an analyst counting comparable pairs depends on the
+    difference, so all three cells are asserted together here rather than one at
+    a time: what matters is that no two of them collide.
+
+    The equivocal-donor case is the one ticket 02 added and the one a donor can
+    never resolve, since a donor gets at most one baseline draw.
+    """
+    equivocal_donor = Donor.objects.create(
+        subject_id="DCMVD02", date_of_birth=date(1976, 1, 1), sex="M", donor_type="living"
+    )
+    CMVSerology.objects.create(
+        donor=equivocal_donor,
+        value=GEN2_IGG_EQUIVOCAL_FROM_AU_ML,  # grayzone -> no baseline serostatus
+        drawn_date=ADVISORY_EFFECTIVE,
+    )
+    Recipient.objects.create(
+        subject_id="SCMVR08", date_of_birth=date(1981, 1, 1), sex="F",
+        kt_date=date(2025, 2, 1), donor=equivocal_donor, donor_serostatus="POS",
+    )
+    agreeing_donor = Donor.objects.create(
+        subject_id="DCMVD03", date_of_birth=date(1977, 1, 1), sex="F", donor_type="living"
+    )
+    CMVSerology.objects.create(
+        donor=agreeing_donor, value=Decimal("1.0"), drawn_date=date(2024, 12, 1)  # NEG
+    )
+    Recipient.objects.create(
+        subject_id="SCMVR09", date_of_birth=date(1982, 1, 1), sex="M",
+        kt_date=date(2025, 3, 1), donor=agreeing_donor, donor_serostatus="NEG",
+    )
+
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    with (tmp_path / "v0.1" / "recipient.csv").open(newline="") as fh:
+        rows = {r["subject_id"]: r["has_donor_serostatus_mismatch"] for r in csv.DictReader(fh)}
+
+    mismatch, not_comparable, agreed = rows["SCMVR07"], rows["SCMVR08"], rows["SCMVR09"]
+    assert mismatch == "true"
+    assert agreed == "false"
+    assert not_comparable == ""
+    assert len({mismatch, not_comparable, agreed}) == 3
 
 
 def test_export_materializes_baseline_and_derived(seeded_baseline, tmp_path):

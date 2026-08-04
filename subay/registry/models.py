@@ -37,6 +37,7 @@ from .safety import RELEASE_THRESHOLD_IU_ML, SYMPTOMATIC_TIERS
 from .scheduling import TIMEPOINT_OFFSETS, ClosureDayLike, first_operating_day
 from .serology_ranges import (
     REAGENT_GENERATION_CHOICES,
+    VALID_GENERATIONS,
     generation_for,
     interpret_igg,
     interpret_igm,
@@ -686,6 +687,18 @@ class CMVSerology(ExactlyOneParentMixin, VerificationMixin):
             _status_matches_value_constraint(
                 "cmvserology_igm_value_matches_status", "igm_value", "igm_status"
             ),
+            # The stored generation KEYS the band maps, so an unrecognized code
+            # is not a cosmetic data-quality problem: every interpretation on the
+            # row stops answering, taking the serology changelist, both derived
+            # serostatuses and the export down with it. `choices` is form-level
+            # and says nothing about the shell and ingest paths, which is exactly
+            # where a mis-cased or legacy code arrives from. Blank is allowed
+            # because it is the documented "default from the draw date" input;
+            # effective_reagent_generation resolves it to a real code.
+            models.CheckConstraint(
+                name="cmvserology_known_reagent_generation",
+                condition=models.Q(reagent_generation__in=sorted(VALID_GENERATIONS) + [""]),
+            ),
             *VerificationMixin.verification_constraints("cmvserology_verification"),
         ]
 
@@ -758,6 +771,16 @@ class CMVSerology(ExactlyOneParentMixin, VerificationMixin):
             raise ValidationError("A reported IgM result must carry a value.")
         if self.igm_status == "missing" and self.igm_value is not None:
             raise ValidationError("A missing IgM observation must not carry a value.")
+        if self.reagent_generation and self.reagent_generation not in VALID_GENERATIONS:
+            raise ValidationError(
+                {
+                    "reagent_generation": (
+                        f"Unknown reagent generation {self.reagent_generation!r}. "
+                        f"Use one of: {', '.join(sorted(VALID_GENERATIONS))}, or leave "
+                        "blank to default from the draw date."
+                    )
+                }
+            )
 
 
 # Slice 14 — protocol-deviation kinds (a missed or late safety release). Two
