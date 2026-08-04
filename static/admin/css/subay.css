@@ -203,6 +203,18 @@ td, th { padding: 11px 16px; border-bottom: 1px solid var(--subay-line-soft); fo
 #changelist table thead th,
 #changelist table thead th a { white-space: normal; }
 
+/* A tabular inline carries every editable column of its model, which for the
+   serology inline is wider than the 1085px content column. `.module` above sets
+   overflow:hidden so children clip to the rounded corner, and that turns the
+   overflow into deletion: no scrollbar appears and the rightmost columns are
+   simply unreachable. Measured on the visit change page at 1440px, five columns
+   were gone - including drawn date and IgM value, both of which an operator has
+   to TYPE INTO, so this was blocking data entry rather than merely looking bad.
+   Scrolling the inline horizontally restores them while keeping the clipped
+   corners everywhere else. */
+.inline-group .inline-related > fieldset.module,
+.inline-group fieldset.module > table { overflow-x: auto; }
+
 /* Zebra striping fights the eye on long clinical tables - drop it. */
 tr:nth-child(odd), tr:nth-child(even) { background: var(--subay-surface); }
 #changelist table tbody tr:hover { background: var(--subay-selected); }

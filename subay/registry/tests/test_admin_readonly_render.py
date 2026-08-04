@@ -125,22 +125,33 @@ def serology(db):
     )
 
 
-def test_serology_change_form_true_boolean_renders_yes_icon(admin_client, serology):
+def test_serology_change_form_renders_a_measured_channel_in_words(admin_client, serology):
+    """These two tests asserted the Yes/No and unknown ICONS until slice 17
+    ticket 03, when the surfaced value became a three-state interpretation.
+
+    An icon carries two states plus a gap; the reading carries three clinical
+    answers plus "not measured". What #19 established is untouched and still
+    asserted: a derived value never reaches the page as the literal "True",
+    "False" or "None". Only the rendering it was pinned to moved.
+
+    The fixture draws on 2025-01-15, before the 2026-06-03 advisory, so 3.0 AU/mL
+    is read against the first-generation single cutoff and is reactive.
+    """
     html = admin_client.get(
         reverse("admin:registry_cmvserology_change", args=[serology.pk])
     ).content.decode()
     assert 'class="readonly">True<' not in html  # #19: no literal "True"
-    assert "icon-yes.svg" in html  # is_positive True -> Yes icon
+    assert "Reactive" in html
 
 
-def test_serology_change_form_none_boolean_renders_unknown_icon(admin_client, serology):
-    """igm_positive is None (not measured) -> the three-state unknown icon, not
-    the literal "None"."""
+def test_serology_change_form_unmeasured_channel_shows_the_placeholder(admin_client, serology):
+    """The fixture leaves igm_status at its 'missing' default, so the IgM channel
+    has no observation. That must render as the "-" placeholder, never "None"."""
     html = admin_client.get(
         reverse("admin:registry_cmvserology_change", args=[serology.pk])
     ).content.decode()
     assert 'class="readonly">None<' not in html
-    assert "icon-unknown.svg" in html
+    assert 'class="readonly">-</div>' in html
 
 
 # --- slice 17 ticket 02: the mismatch flag's three answers on the change form

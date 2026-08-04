@@ -3,6 +3,7 @@ from django.contrib import admin
 from django.contrib.admin import SimpleListFilter
 from simple_history.admin import SimpleHistoryAdmin
 
+from .serology_ranges import SEROLOGY_INTERPRETATION_CHOICES
 from .models import (
     Aliquot,
     ClosureDay,
@@ -51,13 +52,25 @@ __all__ = ["SubayAdminSite"]
 # `_install_derived_displays` attaches one wrapper per name so the admins stay
 # declarative instead of carrying ~30 near-identical stubs.
 
-def _derived_display(attr_name, *, boolean):
+def _derived_display(attr_name, *, boolean, choices=None):
+    """`choices` maps a derived property's stored code to its human label.
+
+    Django gives real choice FIELDS a get_FOO_display(), but these are @property
+    values, so nothing translates them and the raw code reaches the page - a
+    clinician reading "non_reactive" in a column. The domain value has to stay a
+    code, since the export and every comparison depend on it, so the translation
+    belongs here at the rendering edge and nowhere else.
+    """
+    labels = dict(choices or ())
+
     @admin.display(boolean=boolean)
     def _wrapper(self, obj):
         value = getattr(obj, attr_name)
         if boolean:
             return value  # None -> unknown icon, True/False -> Yes/No icon
-        return "-" if value is None or value == "" else value
+        if value is None or value == "":
+            return "-"
+        return labels.get(value, value)
 
     # Keep the property's own name so labels and readonly_fields keys are unchanged.
     _wrapper.__name__ = attr_name
@@ -81,11 +94,16 @@ def _donor_serostatus_mismatch_display(self, obj):
     return "MISMATCH" if verdict else "agree"
 
 
-def _install_derived_displays(admin_class, *, boolean_fields=(), plain_fields=()):
+def _install_derived_displays(
+    admin_class, *, boolean_fields=(), plain_fields=(), choice_fields=()
+):
+    """`choice_fields` takes (name, choices) pairs for coded derived values."""
     for name in boolean_fields:
         setattr(admin_class, name, _derived_display(name, boolean=True))
     for name in plain_fields:
         setattr(admin_class, name, _derived_display(name, boolean=False))
+    for name, choices in choice_fields:
+        setattr(admin_class, name, _derived_display(name, boolean=False, choices=choices))
 
 
 # --- Front-end 1 (issue #2): filters for DERIVED values ---
@@ -159,7 +177,17 @@ class CMVSerologyInline(admin.TabularInline):
     model = CMVSerology
     fk_name = "recipient_visit"
     extra = 0
-    readonly_fields = ("is_positive",)
+    # IgG only, as before. The inline sits under a visit where the operator is
+    # typing the value; the full picture is one click away on the serology admin.
+    readonly_fields = ("igg_interpretation",)
+    # reagent_generation is a real field, so it would otherwise appear here as a
+    # wide select carrying "2nd generation (from 2026-06-03)". This inline already
+    # overflows its container (slice 16), and the container clips with overflow-x
+    # hidden rather than scrolling, so a widened table does not just look bad - it
+    # puts columns out of reach entirely. save() fills the generation from the
+    # draw date, and the serology change form is where it can be overridden and
+    # where verification actually happens, so nothing is lost by omitting it here.
+    exclude = ("reagent_generation",)
 
 
 class CMVQuantitativeInline(admin.TabularInline):
@@ -340,12 +368,16 @@ _LAB_SUBJECT_FKS = ("recipient_visit", "donor")
 @admin.register(CMVSerology)
 class CMVSerologyAdmin(_EditorDefaultedAdmin):
     list_display = (
-        "id", "recipient_visit", "donor", "value", "is_positive", "result_status",
+        "id", "recipient_visit", "donor", "value", "igg_interpretation",
+        "reagent_generation", "result_status",
         "drawn_date", "verified_by", "is_verified",
     )
     autocomplete_fields = _LAB_SUBJECT_FKS
-    list_filter = ("is_verified", "result_status")
-    readonly_fields = ("is_positive", "igm_positive")  # derived at the 2.0 AU/mL threshold
+    list_filter = ("is_verified", "result_status", "reagent_generation")
+    # Read against THIS ROW's reagent generation, which is why the generation is
+    # shown beside them: a verifier signing off needs to see which ranges were
+    # applied without knowing the 2026-06-03 advisory date by heart.
+    readonly_fields = ("igg_interpretation", "igm_interpretation")
 
 
 @admin.register(CMVQuantitative)
@@ -619,8 +651,21 @@ _install_derived_displays(
     plain_fields=("nominal_day", "closure_reason", "shift_days_from_nominal"),
 )
 _install_derived_displays(DonorAdmin, plain_fields=("baseline_serostatus",))
-_install_derived_displays(CMVSerologyAdmin, boolean_fields=("is_positive", "igm_positive"))
-_install_derived_displays(CMVSerologyInline, boolean_fields=("is_positive",))
+# plain, not boolean: the Yes/No/unknown icon carries two states plus a gap, and
+# these carry three clinical answers plus "not measured". Words are the only
+# rendering that fits. The existing installer already handles non-boolean fields,
+# so no new helper is needed.
+_install_derived_displays(
+    CMVSerologyAdmin,
+    choice_fields=(
+        ("igg_interpretation", SEROLOGY_INTERPRETATION_CHOICES),
+        ("igm_interpretation", SEROLOGY_INTERPRETATION_CHOICES),
+    ),
+)
+_install_derived_displays(
+    CMVSerologyInline,
+    choice_fields=(("igg_interpretation", SEROLOGY_INTERPRETATION_CHOICES),),
+)
 _install_derived_displays(CMVQuantitativeAdmin, boolean_fields=("release_overdue",))
 _install_derived_displays(CMVQuantitativeInline, boolean_fields=("release_overdue",))
 _install_derived_displays(TBNKPanelAdmin, plain_fields=("cd4_cd8_ratio",))

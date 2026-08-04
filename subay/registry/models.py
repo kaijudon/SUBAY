@@ -704,16 +704,37 @@ class CMVSerology(ExactlyOneParentMixin, VerificationMixin):
         return self.igm_value >= self.POSITIVE_THRESHOLD
 
     @property
+    def effective_reagent_generation(self):
+        """The generation this row is read against: the stored one, or the one
+        the draw date implies.
+
+        None only on an UNSAVED row that has no draw date yet - the admin add
+        form, where every field is still blank. save() fills the stored value, so
+        a persisted row always answers. Guarding here rather than letting
+        generation_for() compare None to a date, which crashed the visit change
+        page when the serology inline rendered an empty form.
+        """
+        if self.reagent_generation:
+            return self.reagent_generation
+        if self.drawn_date is None:
+            return None
+        return generation_for(self.drawn_date)
+
+    @property
     def igg_interpretation(self):
         """non_reactive / equivocal / reactive, read against THIS ROW's reagent
         generation. None means not measured, not a fourth clinical answer."""
-        return interpret_igg(self.value, self.reagent_generation or generation_for(self.drawn_date))
+        generation = self.effective_reagent_generation
+        if generation is None:
+            return None
+        return interpret_igg(self.value, generation)
 
     @property
     def igm_interpretation(self):
-        return interpret_igm(
-            self.igm_value, self.reagent_generation or generation_for(self.drawn_date)
-        )
+        generation = self.effective_reagent_generation
+        if generation is None:
+            return None
+        return interpret_igm(self.igm_value, generation)
 
     def save(self, *args, **kwargs):
         """Fill the reagent generation from the draw date when it was left blank.
