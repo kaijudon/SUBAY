@@ -35,6 +35,12 @@ from .resistance import (
 from . import safety
 from .safety import RELEASE_THRESHOLD_IU_ML, SYMPTOMATIC_TIERS
 from .scheduling import TIMEPOINT_OFFSETS, ClosureDayLike, first_operating_day
+from .serology_ranges import (
+    REAGENT_GENERATION_CHOICES,
+    generation_for,
+    interpret_igg,
+    interpret_igm,
+)
 from .validators import subject_id_validator
 
 SEX_CHOICES = [("M", "Male"), ("F", "Female")]
@@ -634,6 +640,14 @@ class CMVSerology(ExactlyOneParentMixin, VerificationMixin):
         help_text="IgM channel. Defaults 'missing' — an IgG-only draw has no IgM observation.",
     )
     drawn_date = models.DateField()
+    reagent_generation = models.CharField(
+        max_length=4,
+        choices=REAGENT_GENERATION_CHOICES,
+        blank=True,
+        help_text="Assay reagent generation that produced this result. Leave blank "
+        "to default from the draw date (2nd gen from 2026-06-03). Set it by hand "
+        "only for a late-entered sample that was run on 1st-generation reagent.",
+    )
     history = HistoricalRecords()
 
     class Meta:
@@ -670,6 +684,33 @@ class CMVSerology(ExactlyOneParentMixin, VerificationMixin):
         if self.igm_value is None:
             return None
         return self.igm_value >= self.POSITIVE_THRESHOLD
+
+    @property
+    def igg_interpretation(self):
+        """non_reactive / equivocal / reactive, read against THIS ROW's reagent
+        generation. None means not measured, not a fourth clinical answer."""
+        return interpret_igg(self.value, self.reagent_generation or generation_for(self.drawn_date))
+
+    @property
+    def igm_interpretation(self):
+        return interpret_igm(
+            self.igm_value, self.reagent_generation or generation_for(self.drawn_date)
+        )
+
+    def save(self, *args, **kwargs):
+        """Fill the reagent generation from the draw date when it was left blank.
+
+        This model otherwise puts every rule in clean() plus a CheckConstraint,
+        and a save() override is a departure from that. It earns its place: the
+        generation has to be right on EVERY write path, including the bare-save
+        and loaddata paths clean() never sees, and unlike the other rules this
+        one supplies a value rather than rejecting one, which a CheckConstraint
+        cannot do. Explicitly-set values are never touched, so a late-entered
+        first-generation sample keeps the generation a human chose for it.
+        """
+        if not self.reagent_generation and self.drawn_date:
+            self.reagent_generation = generation_for(self.drawn_date)
+        super().save(*args, **kwargs)
 
     def clean(self):
         super().clean()

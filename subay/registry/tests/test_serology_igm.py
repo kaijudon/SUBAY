@@ -14,6 +14,14 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 
 from subay.registry.models import CMVSerology, Recipient, RecipientVisit
+from subay.registry.serology_ranges import (
+    EQUIVOCAL,
+    GEN1,
+    GEN2,
+    NON_REACTIVE,
+    REACTIVE,
+    interpret_igm,
+)
 
 
 @pytest.fixture
@@ -39,12 +47,52 @@ def test_igm_positive_is_derived_not_stored():
         (Decimal("2.01"), True),
         (Decimal("1.99"), False),
         (Decimal("0"), False),
-        (None, None),  # not measured -> undefined, never a third "equivocal" state
+        (None, None),  # not measured -> undefined
     ],
 )
-def test_igm_positive_single_cutoff_no_equivocal(igm, expected):
+def test_igm_positive_single_cutoff_first_generation_only(igm, expected):
+    """DEC-016's single 2.0 AU/mL cutoff, which is now FIRST-GENERATION ONLY.
+
+    This test was named ..._no_equivocal and asserted the absence of a grayzone
+    as a standing guarantee. The 2026-06-03 SPMC advisory contradicted that: the
+    second-generation IgM range opens a grayzone from 2.00 to <4.20 AU/mL.
+
+    It is extended rather than deleted (slice 17, ticket 01). What DEC-016
+    established is still true, but only of first-generation reagent, and it has
+    to stay true forever because pre-advisory rows are never re-interpreted
+    (DEC-030 decision 2). The three-state successor to this guarantee lives in
+    test_serology_ranges.py; the assertion below pins the same values through it,
+    so the two cannot drift apart.
+    """
     s = CMVSerology(igm_value=igm)
     assert s.igm_positive is expected
+
+    interpretation = interpret_igm(igm, GEN1)
+    if expected is None:
+        assert interpretation is None
+    else:
+        assert interpretation == (REACTIVE if expected else NON_REACTIVE)
+    assert interpretation != EQUIVOCAL  # no grayzone on first-generation reagent
+
+
+@pytest.mark.parametrize(
+    "igm,expected",
+    [
+        (Decimal("1.99"), NON_REACTIVE),
+        (Decimal("2.00"), EQUIVOCAL),  # was POSITIVE under the old single cutoff
+        (Decimal("4.19"), EQUIVOCAL),
+        (Decimal("4.20"), REACTIVE),
+        (None, None),
+    ],
+)
+def test_igm_second_generation_opens_an_equivocal_band(igm, expected):
+    """The successor guarantee, stated on the same channel as the one it replaces.
+
+    2.00 AU/mL is the value that moved: positive before the advisory, equivocal
+    after it. A row reading equivocal is what makes a repeat draw owed
+    (DEC-030 decision 3).
+    """
+    assert interpret_igm(igm, GEN2) == expected
 
 
 def test_igm_channel_is_independent_of_igg(visit):
