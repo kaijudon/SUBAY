@@ -40,13 +40,27 @@ jobs:
           # lapses. The anthropic.com address or the Claude name covers all of
           # them.
           #
-          # Anchored to a line start, because a real trailer always sits at one
-          # while prose about the rule does not. This repo's own docs and
-          # .sandcastle/*.md say "do NOT add a `Co-Authored-By:` trailer", and an
-          # earlier draft of this check failed on the very commit that
+          # BOTH alternatives are anchored to a line start, because a real trailer
+          # always sits at one while prose about the rule does not. This repo's own
+          # docs and .sandcastle/*.md say "do NOT add a `Co-Authored-By:` trailer",
+          # and an earlier draft of this check failed on the very commit that
           # introduced it. A guard that fires on its own documentation is one
           # people learn to bypass.
-          pattern='^Co-Authored-By:.*(Claude|anthropic\.com)|Generated with \[Claude Code\]\('
+          #
+          # The grouping parens are load-bearing, not decoration. `|` has the
+          # lowest precedence in ERE, so `^A|B` anchors A and leaves B floating -
+          # which is what this pattern did for its first three months, making the
+          # footer rule fire mid-sentence despite the comment above claiming
+          # otherwise.
+          #
+          # The footer alternative allows a non-alphanumeric run before "Generated"
+          # because the real footer is emoji-prefixed. A bare `^Generated` would
+          # anchor cleanly and then miss every actual offender, which is worse than
+          # the bug being fixed. `[^[:alnum:]]*` swallows the emoji bytes and the
+          # space without swallowing "the ... footer" from a sentence about it.
+          # Keep this in step with the perl rules in .githooks/commit-msg, which
+          # enforce the same two shapes locally.
+          pattern='^(Co-Authored-By:.*(Claude|anthropic\.com)|[^[:alnum:]]*Generated with \[Claude Code\]\()'
           status=0
 
           echo "== PR body =="
@@ -82,7 +96,7 @@ jobs:
           and re-read the body afterwards to confirm it landed.
 
           To fix commit messages: `git rebase -i` and reword, or for a whole
-          branch use `git filter-branch --msg-filter`. Run scripts/setup-hooks.sh
+          branch use `git filter-branch --msg-filter`. Run .githooks/setup.sh
           so the local hook keeps it from happening again.
           MSG
           fi

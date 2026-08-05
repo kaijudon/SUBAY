@@ -4,7 +4,7 @@
 # This lives in .githooks/ rather than .git/hooks/ so it is versioned and travels
 # with a clone. The old copy sat in .git/hooks/, which protects exactly one
 # working copy: commits made on the deploy box carried the trailer straight past
-# it. Activate with `git config core.hooksPath .githooks`, which scripts/setup-hooks.sh does.
+# it. Activate with `git config core.hooksPath .githooks`, which .githooks/setup.sh does.
 #
 # A hook can only ever be advisory - `--no-verify` skips it and a fresh clone
 # will not have core.hooksPath set until someone runs the setup script. The CI
@@ -21,8 +21,13 @@ before=$(cat "$msg_file")
 # The footer rule deletes the WHOLE LINE rather than the phrase. The footer is
 # usually prefixed with a robot emoji, and perl reads this file as bytes, so a
 # \x{1F916} codepoint match silently leaves the four raw bytes behind - a
-# stripped-looking message with a stray emoji on its own line. Anchoring to the
-# line ends sidesteps the encoding question entirely.
+# stripped-looking message with a stray emoji on its own line. Matching the
+# prefix as raw bytes sidesteps the encoding question entirely.
+#
+# That prefix is \W* and NOT .*, which is the whole difference between "eat the
+# emoji" and "eat any line that mentions the footer". The earlier .* silently
+# deleted documentation: a commit message explaining this rule lost the line
+# that explained it, with only the advisory notice on stderr to say so.
 #
 # The trailer rule names no model. "Claude Opus 4.8" was yesterday's, "Claude
 # Opus 5" is today's, and pinning either would mean editing this file every time
@@ -39,7 +44,7 @@ before=$(cat "$msg_file")
 # the shape a trailer takes: appended at the very end.
 perl -0pi -e '
   s/^Co-Authored-By:.*(?:Claude|anthropic\.com).*\n?//gim;
-  s/^.*Generated with \[Claude Code\]\(.*\n?//gim;
+  s/^\W*Generated with \[Claude Code\]\(.*\n?//gim;
 ' "$msg_file"
 
 # Collapse the blank lines the removal leaves behind, then trim trailing space.
