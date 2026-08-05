@@ -209,11 +209,19 @@ td, th { padding: 11px 16px; border-bottom: 1px solid var(--subay-line-soft); fo
    answer that needs about 95. The verdict wrapped, and one wrapped cell sets
    the height of its whole row - measured 55px against 40px for every other row
    on the viral-load list. These are short fixed phrases from a closed set, so
-   holding them on one line cannot run away with the table width. */
+   holding them on one line cannot run away with the table width.
+
+   It is not free on the serology list, which is the one changelist already
+   wider than its box: "Awaiting repeat" cost 42px, taking the horizontal scroll
+   from 276px to 318px. Worth it. A row awaiting a repeat is one a data manager
+   is looking for, the scroll is a real scrollbar on a DIV (15px of reserved
+   gutter, measured), and a row that changes height as its status changes is
+   harder to scan than a slightly wider table. */
 #changelist td.field-release_overdue,
 #changelist td.field-closure_shifted,
 #changelist td.field-has_donor_serostatus_mismatch,
-#changelist td.field-reagent_generation_label { white-space: nowrap; }
+#changelist td.field-reagent_generation_label,
+#changelist td.field-repeat_status { white-space: nowrap; }
 
 /* A tabular inline carries every editable column of its model, which for the
    serology inline is wider than the 1085px content column. `.module` above sets
