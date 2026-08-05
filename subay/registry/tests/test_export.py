@@ -256,10 +256,16 @@ def test_export_keeps_the_mismatch_flags_third_state_separable(seeded_baseline, 
     nothing in the export pinned what that answer becomes in the file.
 
     The column previously wrote "false" for a pair it could not compare, which
-    asserted the two sides were checked and agreed. It now writes blank. Those
-    are different claims and an analyst counting comparable pairs depends on the
-    difference, so all three cells are asserted together here rather than one at
-    a time: what matters is that no two of them collide.
+    asserted the two sides were checked and agreed. It now names the third state
+    outright. Those are different claims and an analyst counting comparable pairs
+    depends on the difference, so all three cells are asserted together here
+    rather than one at a time: what matters is that no two of them collide.
+
+    Blank is asserted against, not merely differed from. Every other unknown in
+    this snapshot is blank, and the manifest publishes column TYPES and no value
+    domain, so a blank here would be indistinguishable from a question nobody
+    asked to anyone reading the file without the source in front of them. The
+    cell is the only place the distinction can live.
 
     The equivocal-donor case is the one ticket 02 added and the one a donor can
     never resolve, since a donor gets at most one baseline draw.
@@ -289,13 +295,18 @@ def test_export_keeps_the_mismatch_flags_third_state_separable(seeded_baseline, 
 
     call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
     with (tmp_path / "v0.1" / "recipient.csv").open(newline="") as fh:
-        rows = {r["subject_id"]: r["has_donor_serostatus_mismatch"] for r in csv.DictReader(fh)}
+        reader = csv.DictReader(fh)
+        rows = {r["subject_id"]: r for r in reader}
+    flags = {sid: r["has_donor_serostatus_mismatch"] for sid, r in rows.items()}
 
-    mismatch, not_comparable, agreed = rows["SCMVR07"], rows["SCMVR08"], rows["SCMVR09"]
+    mismatch, not_comparable, agreed = flags["SCMVR07"], flags["SCMVR08"], flags["SCMVR09"]
     assert mismatch == "true"
     assert agreed == "false"
-    assert not_comparable == ""
+    assert not_comparable == "not_comparable"
     assert len({mismatch, not_comparable, agreed}) == 3
+    # And not the blank an unasked question uses two columns to the left.
+    assert rows["SCMVR07"]["has_hypertension"] == ""
+    assert "" not in {mismatch, not_comparable, agreed}
 
 
 def test_export_materializes_baseline_and_derived(seeded_baseline, tmp_path):
