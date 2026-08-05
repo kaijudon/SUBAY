@@ -211,9 +211,20 @@ td, th { padding: 11px 16px; border-bottom: 1px solid var(--subay-line-soft); fo
    were gone - including drawn date and IgM value, both of which an operator has
    to TYPE INTO, so this was blocking data entry rather than merely looking bad.
    Scrolling the inline horizontally restores them while keeping the clipped
-   corners everywhere else. */
-.inline-group .inline-related > fieldset.module,
-.inline-group fieldset.module > table { overflow-x: auto; }
+   corners everywhere else.
+
+   The scroll has to sit on the wrapping DIV, not on the fieldset. Blink lays a
+   fieldset's children out inside an anonymous content box that `overflow` on
+   the fieldset never reaches, so `overflow-x:auto` there clips exactly as
+   before and paints no scrollbar: measured headed at 1440px, the serology
+   fieldset hid 858px with a 0px scrollbar, while an identical DIV beside it
+   drew the normal 15px bar. Programmatic scrollLeft still worked, which is why
+   the first fix looked correct and was not - reachable in principle, invisible
+   to the operator. The fieldset must go back to overflow:visible for this to
+   work; overflow-x:visible alone is a no-op, because a visible axis paired with
+   a clipped one computes to auto. */
+.inline-group .inline-related > fieldset.module { overflow: visible; }
+.inline-group .inline-related { overflow-x: auto; }
 
 /* Zebra striping fights the eye on long clinical tables - drop it. */
 tr:nth-child(odd), tr:nth-child(even) { background: var(--subay-surface); }

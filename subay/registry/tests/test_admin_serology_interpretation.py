@@ -220,6 +220,61 @@ def test_wide_inlines_can_scroll_rather_than_clipping():
     )
 
 
+def _css_rules():
+    """(selector, body) for every declaration block in subay.css, comments stripped."""
+    import re
+    from pathlib import Path
+
+    css = (Path(__file__).resolve().parents[3] / "static/admin/css/subay.css").read_text()
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    return [
+        (m.group(1).strip(), m.group(2))
+        for m in re.finditer(r"([^{}]+)\{([^{}]*)\}", css)
+    ]
+
+
+def test_the_inline_scroller_is_not_a_fieldset():
+    """The scroll must sit on the wrapping DIV, never on the fieldset itself.
+
+    The first fix put `overflow-x:auto` on `fieldset.module` and looked right
+    from script: `scrollLeft` moved, and a wheel gesture over the inline moved
+    it too. It was still broken. Blink lays a fieldset's children out in an
+    anonymous content box that `overflow` on the fieldset never reaches, so the
+    element clips its 858px of extra columns and paints NO scrollbar. Measured
+    headed at 1440px on the visit change page: fieldset reserved 0px of gutter
+    while a plain DIV injected beside it reserved the normal 15px. Nothing on
+    screen told the operator the columns existed.
+
+    So the rule under test is not "some overflow-x:auto exists" - the broken
+    version satisfied that. It is that no fieldset is the scroller, and that the
+    fieldset is put back to overflow:visible, since a visible axis paired with a
+    clipped one silently computes back to auto.
+    """
+    offenders, wrapper_scrolls, fieldset_reset = [], False, False
+    for selector, body in _css_rules():
+        decls = body.replace(" ", "")
+        scrolls = "overflow-x:auto" in decls or "overflow:auto" in decls
+        if scrolls and "fieldset" in selector:
+            offenders.append(selector)
+        if scrolls and ".inline-related" in selector and "fieldset" not in selector:
+            wrapper_scrolls = True
+        if "fieldset.module" in selector and "overflow:visible" in decls:
+            fieldset_reset = True
+
+    assert not offenders, (
+        "a fieldset is the inline scroller, which clips with no visible "
+        "scrollbar in Blink: " + ", ".join(offenders)
+    )
+    assert wrapper_scrolls, (
+        "no non-fieldset .inline-related rule scrolls the wide inline; its "
+        "rightmost columns are unreachable"
+    )
+    assert fieldset_reset, (
+        "fieldset.module must be reset to overflow:visible, or it keeps "
+        "clipping inside the scrolling wrapper"
+    )
+
+
 @pytest.mark.django_db
 def test_the_changelist_reads_each_row_against_its_own_generation(admin_client, visit):
     """The defect made visible where a data manager actually works. The same
