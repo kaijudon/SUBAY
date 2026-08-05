@@ -14,6 +14,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from django.db import IntegrityError, transaction
 
 from subay.registry.models import CMVSerology, Donor, Recipient, RecipientVisit
 from subay.registry.serology_ranges import (
@@ -158,12 +159,20 @@ def test_an_equivocal_donor_result_is_terminal():
     no established baseline serostatus and the flag must say so."""
     d = _donor()
     CMVSerology.objects.create(donor=d, value=Decimal("1.00"), drawn_date=GEN2_DRAW)
-    from django.db.utils import IntegrityError
 
-    with pytest.raises(IntegrityError):
+    # atomic() is not decoration. A constraint failure marks the surrounding
+    # transaction broken, so every query after it raises TransactionManagementError
+    # instead of doing what it says - which would make the assertions BELOW report
+    # a fault they did not find. The block scopes the damage to the failed insert.
+    with pytest.raises(IntegrityError), transaction.atomic():
         CMVSerology.objects.create(
             donor=d, value=Decimal("1.50"), drawn_date=date(2026, 7, 8)
         )
+
+    # The point of the test: the constraint holds, so the grayzone result is the
+    # donor's only one and the baseline stays undetermined for good.
+    assert d.serologies.count() == 1
+    assert d.baseline_serostatus is None
 
 
 @pytest.mark.django_db
