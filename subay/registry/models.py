@@ -827,12 +827,22 @@ class CMVSerology(ExactlyOneParentMixin, VerificationMixin):
         """Fill the reagent generation from the draw date when it was left blank.
 
         This model otherwise puts every rule in clean() plus a CheckConstraint,
-        and a save() override is a departure from that. It earns its place: the
-        generation has to be right on EVERY write path, including the bare-save
-        and loaddata paths clean() never sees, and unlike the other rules this
-        one supplies a value rather than rejecting one, which a CheckConstraint
-        cannot do. Explicitly-set values are never touched, so a late-entered
+        and a save() override is a departure from that. It earns its place: it
+        SUPPLIES a value rather than rejecting one, which a CheckConstraint
+        cannot do, and it reaches the shell and ingest paths that never call
+        full_clean(). Explicitly-set values are never touched, so a late-entered
         first-generation sample keeps the generation a human chose for it.
+
+        What it does NOT reach, because Django routes around it: `loaddata`
+        (DeserializedObject calls save_base(raw=True)), `bulk_create`, and
+        `queryset.update()`. A fixture restore therefore leaves the column blank
+        on every row. Nothing is misread when it does - `is_equivocal`, both
+        interpretations, both derived serostatuses and the export all read
+        `effective_reagent_generation`, which resolves a blank through the same
+        draw-date rule - but the stored column and the admin's generation filter
+        will show blank until 0020's backfill logic is re-run over the restored
+        rows. Ops consequence, recorded here so a blank column after a restore
+        reads as expected rather than as data loss.
         """
         if not self.reagent_generation and self.drawn_date:
             self.reagent_generation = generation_for(self.drawn_date)

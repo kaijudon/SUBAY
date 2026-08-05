@@ -11,10 +11,12 @@ actually arrives through never see it, which is where a mis-cased or legacy code
 comes from. So the rule gets the model's usual dual guard: `clean()` for a
 readable admin error, a `CheckConstraint` for the bare-save path.
 """
+import json
 from datetime import date
 from decimal import Decimal
 
 import pytest
+from django.core import serializers
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 
@@ -137,3 +139,41 @@ def test_an_unknown_generation_fails_by_name_not_as_a_keyerror(interpret):
 def test_the_guard_does_not_disturb_a_known_generation(generation):
     assert interpret_igg(Decimal("1.50"), generation) is not None
     assert interpret_igm(Decimal("1.50"), generation) is not None
+
+
+def test_loaddata_bypasses_save_but_the_row_still_interprets(visit):
+    """The save() override fills the generation from the draw date - except on the
+    paths Django routes around it, of which `loaddata` is the one an operator hits.
+
+    Restoring a fixture backup calls DeserializedObject.save(), which goes to
+    save_base(raw=True) and never enters CMVSerology.save(). The stored column
+    therefore comes back BLANK. Pinned here because the consequence is a support
+    question, not a crash: the admin changelist column and the generation filter
+    read blank while every interpretation still answers correctly through
+    effective_reagent_generation. Anyone who later moves the fill into save() only,
+    or drops the effective_ fallback as redundant, breaks one of those two halves.
+    """
+    fixture = json.dumps([
+        {
+            "model": "registry.cmvserology",
+            "pk": None,
+            "fields": {
+                "recipient_visit": visit.pk,
+                "donor": None,
+                "value": "1.50",
+                "result_status": "reported",
+                "igm_value": None,
+                "igm_status": "missing",
+                "drawn_date": DRAWN.isoformat(),
+                "reagent_generation": "",  # a backup taken before 0020 ran
+                "repeats": None,
+            },
+        }
+    ])
+    for obj in serializers.deserialize("json", fixture):
+        obj.save()
+
+    row = CMVSerology.objects.latest("pk")
+    assert row.reagent_generation == ""            # save() never ran
+    assert row.effective_reagent_generation == GEN2  # DRAWN is the advisory day
+    assert row.igg_interpretation == interpret_igg(Decimal("1.50"), GEN2)
