@@ -20,7 +20,7 @@ from django.urls import reverse
 from django_otp.plugins.otp_totp.models import TOTPDevice
 
 from subay.registry.admin import CMVSerologyAdmin, CMVSerologyInline
-from subay.registry.models import CMVSerology, Recipient, RecipientVisit
+from subay.registry.models import CMVSerology, Donor, Recipient, RecipientVisit
 
 GEN2_DRAW = date(2026, 7, 1)   # on/after the advisory
 GEN1_DRAW = date(2026, 6, 2)   # the day before it
@@ -291,9 +291,11 @@ def test_the_changelist_reads_each_row_against_its_own_generation(admin_client, 
     html = admin_client.get(reverse("admin:registry_cmvserology_changelist")).content.decode()
     assert "Non-reactive" in html
     assert "Reactive" in html
-    # And the generation that explains the difference is on the row.
-    assert "1st generation" in html
-    assert "2nd generation" in html
+    # And the generation that explains the difference is on the row. Asserted on
+    # the cell: the filter rail carries both full labels on every render, so a
+    # bare substring would pass even with the column gone.
+    assert '<td class="field-reagent_generation_label">1st gen</td>' in html
+    assert '<td class="field-reagent_generation_label">2nd gen</td>' in html
 
 
 @pytest.mark.django_db
@@ -311,8 +313,63 @@ def test_the_changelist_cell_drops_the_advisory_date_from_the_label(admin_client
     """
     _serology(visit, value="1.50", drawn=GEN1_DRAW)
     html = admin_client.get(reverse("admin:registry_cmvserology_changelist")).content.decode()
-    assert '<td class="field-reagent_generation_label">1st generation</td>' in html
+    assert '<td class="field-reagent_generation_label">1st gen</td>' in html
     # The dates are still reachable, one click away on the change form.
     assert "1st generation (before 2026-06-03)" in admin_client.get(
         reverse("admin:registry_cmvserology_add")
     ).content.decode()
+
+
+# --- the changelist fits its box ------------------------------------------
+#
+# Eleven columns needed 1116px inside the 798px this list gets at 1440, so 318px
+# sat behind a horizontal scroll - the verification state among it. Two pairs of
+# columns were carrying one fact each and were collapsed. These tests pin the
+# collapse, not the pixels: no Django test client can measure a table.
+
+
+@pytest.mark.django_db
+def test_one_subject_column_serves_both_parents(admin_client, visit):
+    """A serology attaches to a recipient visit XOR a donor, so two subject
+    columns meant every row rendered one of them as an empty dash."""
+    _serology(visit, value="1.50")
+    d = Donor.objects.create(
+        subject_id="DCMVD07", date_of_birth=date(1975, 1, 1), sex="F"
+    )
+    CMVSerology.objects.create(
+        donor=d, value=Decimal("1.50"), result_status="reported", drawn_date=GEN2_DRAW
+    )
+    html = admin_client.get(reverse("admin:registry_cmvserology_changelist")).content.decode()
+
+    assert '<td class="field-subject">SCMVR01 day_7</td>' in html
+    assert '<td class="field-subject">DCMVD07 donor</td>' in html
+    # The columns it replaced are gone, not merely renamed.
+    assert "column-recipient_visit" not in html
+    assert "column-donor" not in html
+    # The draw date is its own column; repeating it inside the subject cell is
+    # what made that column 222px wide.
+    assert '<td class="field-subject">SCMVR01 day_7 @' not in html
+
+
+@pytest.mark.django_db
+def test_one_verification_column_says_whether_the_row_is_signed_off(admin_client, visit):
+    """`verified_by` and `is_verified` carried a single bit between them: a dash
+    plus a red cross, or a name plus a tick."""
+    entered = User.objects.create_user("dm_two", "dm2@x", "pw")
+    checked = User.objects.create_user("clinician", "cl@x", "pw")
+    pending = _serology(visit, value="1.50")
+    signed = _serology(visit, value="0.50")
+    CMVSerology.objects.filter(pk=signed.pk).update(
+        entered_by=entered, verified_by=checked,
+        verified_at=date(2026, 7, 2), is_verified=True,
+    )
+    html = admin_client.get(reverse("admin:registry_cmvserology_changelist")).content.decode()
+
+    assert '<td class="field-verification">clinician</td>' in html
+    assert '<td class="field-verification">pending</td>' in html
+    assert "column-verified_by" not in html
+    # 68 red crosses on a 68-row list marked nothing. The is_verified FILTER is
+    # what a reviewer works the queue from, and it stays.
+    assert "icon-no.svg" not in html
+    assert "is_verified" in CMVSerologyAdmin.list_filter
+    assert pending.is_verified is False

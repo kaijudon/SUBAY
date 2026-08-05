@@ -402,11 +402,19 @@ _LAB_SUBJECT_FKS = ("recipient_visit", "donor")
 
 @admin.register(CMVSerology)
 class CMVSerologyAdmin(_EditorDefaultedAdmin):
+    # Eleven columns needed 1116px inside the 798px this changelist gets at
+    # 1440, so 318px of it - including the whole verification state - sat behind
+    # a horizontal scroll. Every column below earns its width: the two subject
+    # columns are collapsed into one (the model already guarantees exactly one is
+    # set), and so are the two verification columns, which carried one bit
+    # between them.
     list_display = (
-        "id", "recipient_visit", "donor", "value", "igg_interpretation",
+        "id", "subject", "value", "igg_interpretation",
         "reagent_generation_label", "result_status",
-        "drawn_date", "repeat_status", "verified_by", "is_verified",
+        "drawn_date", "repeat_status", "verification",
     )
+    # subject/verification read through both FKs on every row.
+    list_select_related = ("recipient_visit", "donor", "verified_by")
     # `repeats` autocompletes against this same admin, which is why search_fields
     # is here: a repeat is entered by finding the earlier draw by subject.
     search_fields = ("recipient_visit__recipient__subject_id", "donor__subject_id")
@@ -417,15 +425,47 @@ class CMVSerologyAdmin(_EditorDefaultedAdmin):
     # applied without knowing the 2026-06-03 advisory date by heart.
     readonly_fields = ("igg_interpretation", "igm_interpretation")
 
+    @admin.display(ordering="recipient_visit", description="Subject")
+    def subject(self, obj):
+        """One column for what ExactlyOneParentMixin already guarantees is one
+        fact. A serology attaches to a recipient visit XOR a donor, so the two
+        columns were each half empty, and the empty one rendered "-" on every
+        row while costing 80px of a table that had none to spare.
+
+        The visit's own __str__ ends in its draw date, which the drawn-date
+        column beside it already carries; the timepoint is what identifies the
+        row here."""
+        visit = obj.recipient_visit
+        if visit is not None:
+            return f"{visit.recipient_id} {visit.timepoint_label}"
+        return f"{obj.donor_id} donor" if obj.donor_id else "-"
+
+    @admin.display(ordering="is_verified", description="Verified")
+    def verification(self, obj):
+        """`verified_by` and `is_verified` carried one bit between them: an
+        unverified row showed a dash and a red cross, a verified one a name and a
+        tick. Merging them frees 78px and drops 68 red crosses off a 68-row list.
+
+        Those crosses were not wrong the way the derived flags were - unverified
+        IS the state four-eyes wants finished - but an icon on every row marks
+        nothing, and the queue a reviewer actually works from is the is_verified
+        filter in the rail, which is untouched. The pending state stays in words
+        so the column still reads as work outstanding rather than as blank."""
+        return obj.verified_by if obj.is_verified else "pending"
+
     @admin.display(description="Repeat")
     def repeat_status(self, obj):
         """Words, not a boolean icon. Django renders a False BooleanField in
         list_display as a red cross, and "this draw does not need repeating" is the
         healthy state - the same misreading ticket 03 fixed for the interpretation
         column. A blank cell for the ordinary case also keeps the eye on the few
-        rows that are actually pending."""
+        rows that are actually pending.
+
+        "Awaiting" rather than "Awaiting repeat" under a header that already says
+        Repeat: the longer phrase is the widest thing in the column and set its
+        width for the sake of a word the header repeats."""
         if obj.awaiting_repeat:
-            return "Awaiting repeat"
+            return "Awaiting"
         if obj.repeats_id:
             return f"Repeats #{obj.repeats_id}"
         return ""
@@ -442,11 +482,17 @@ class CMVSerologyAdmin(_EditorDefaultedAdmin):
         every other changelist in the app. The date is still one click away on
         the row, and in the filter rail beside it.
 
+        Abbreviated further to "2nd gen" under a header that already reads
+        "Reagent generation". That is 40px, and it is what pays for holding the
+        IgG reading beside it on one line: "Non-reactive" breaks at its hyphen
+        otherwise.
+
         Named apart from the field on purpose. lookup_field() resolves a real
         model field BEFORE it consults the ModelAdmin, so a method named
         `reagent_generation` would be found second and never called - the
         opposite of the property case the derived-display wrappers rely on."""
-        return obj.get_reagent_generation_display().split(" (")[0] or "-"
+        code = obj.get_reagent_generation_display().split(" (")[0]
+        return code.replace("generation", "gen") if code else "-"
 
 
 @admin.register(CMVQuantitative)
@@ -736,6 +782,14 @@ _install_derived_displays(
     CMVSerologyInline,
     choice_fields=(("igg_interpretation", SEROLOGY_INTERPRETATION_CHOICES),),
 )
+# Django titles these from the property name, and "Igg interpretation" is both
+# wrong about the capital G and the widest thing in its changelist column - which
+# is what sets the column's width, on a list that has none to give. The readings
+# underneath are at most twelve characters. Same label on the change form, where
+# it also reads better than the auto-titled version.
+CMVSerologyAdmin.igg_interpretation.short_description = "IgG reading"
+CMVSerologyAdmin.igm_interpretation.short_description = "IgM reading"
+CMVSerologyInline.igg_interpretation.short_description = "IgG reading"
 _release_overdue_display.__name__ = "release_overdue"
 CMVQuantitativeAdmin.release_overdue = _release_overdue_display
 CMVQuantitativeInline.release_overdue = _release_overdue_display
