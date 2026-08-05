@@ -9,7 +9,7 @@ empties become a "-" placeholder and booleans render the Yes/No/unknown icon.
 """
 import inspect
 import re
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -19,7 +19,14 @@ from django.test import Client
 from django.urls import reverse
 from django_otp.plugins.otp_totp.models import TOTPDevice
 
-from subay.registry.models import CMVSerology, Donor, Recipient, RecipientVisit
+from subay.registry.models import (
+    ClosureDay,
+    CMVQuantitative,
+    CMVSerology,
+    Donor,
+    Recipient,
+    RecipientVisit,
+)
 
 
 def _otp_client(user):
@@ -191,6 +198,82 @@ def test_recipient_change_form_states_the_mismatch_verdict_in_words(
     assert expected in html
     assert 'class="readonly">None<' not in html
     assert 'class="readonly">False<' not in html
+
+
+# --- closure_shifted states its verdict in words, for the same reason ------
+
+
+@pytest.mark.parametrize("shifted", [False, True])
+def test_visit_change_form_states_the_closure_verdict_in_words(db, admin_client, shifted):
+    """Same inverted polarity as the mismatch flag, so the same fix.
+
+    An on-time visit is the ordinary case and drew the red cross, which made a
+    healthy schedule render as a column of alarms; the shifted visit, the one
+    the protocol actually wants flagged, drew the green tick. This one is
+    strictly two-state, so the icon's third slot was never the problem - only
+    the colour, which words do not have.
+    """
+    kt = date(2025, 1, 1)
+    r = Recipient.objects.create(
+        subject_id="SCMVR03", date_of_birth=date(1980, 1, 1), sex="M", kt_date=kt,
+    )
+    nominal = kt + timedelta(days=7)
+    if shifted:
+        ClosureDay.objects.create(date=nominal, reason="annexed_holiday")
+    v = RecipientVisit.objects.create(
+        recipient=r, timepoint_label="day_7", actual_visit_date=nominal,
+    )
+    assert v.closure_shifted is shifted  # the fixture really does set up both cases
+
+    html = admin_client.get(
+        reverse("admin:registry_recipientvisit_change", args=[v.pk])
+    ).content.decode()
+    assert ("SHIFTED" if shifted else "no shift") in html
+    assert 'class="readonly">True<' not in html
+    assert 'class="readonly">False<' not in html
+    if not shifted:
+        assert "icon-no.svg" not in html  # no red cross on a visit that ran on time
+
+
+# --- the safety release flag reads forwards too ----------------------------
+
+
+@pytest.mark.parametrize(
+    "value,tier,expected",
+    [
+        (Decimal("50000"), "disease", "OVERDUE"),          # needed a release, none logged
+        (Decimal("10"), "asymptomatic", "not required"),
+    ],
+)
+def test_quantitative_change_form_states_the_release_verdict_in_words(
+    db, admin_client, value, tier, expected
+):
+    """Third flag with the same inverted polarity, and the one an operator met
+    most often: it renders in the quantitative inline of every visit page, so a
+    visit whose results all went out on time showed a row of red crosses.
+
+    The false answer also covered two unlike situations - released inside the
+    window, and never needing a release - which a two-colour icon cannot
+    separate. Both now say which one they are.
+    """
+    r = Recipient.objects.create(
+        subject_id="SCMVR04", date_of_birth=date(1980, 1, 1), sex="M",
+        kt_date=date(2025, 1, 1),
+    )
+    v = RecipientVisit.objects.create(
+        recipient=r, timepoint_label="day_7", actual_visit_date=date(2025, 1, 8)
+    )
+    q = CMVQuantitative.objects.create(
+        recipient_visit=v, value=value, drawn_date=date(2025, 1, 8), severity_tier=tier,
+    )
+    html = admin_client.get(
+        reverse("admin:registry_cmvquantitative_change", args=[q.pk])
+    ).content.decode()
+    assert expected in html
+    assert 'class="readonly">True<' not in html
+    assert 'class="readonly">False<' not in html
+    if expected != "OVERDUE":
+        assert "icon-no.svg" not in html  # no red cross on a result with nothing wrong
 
 
 # --- #18: page <title> is never blank -------------------------------------

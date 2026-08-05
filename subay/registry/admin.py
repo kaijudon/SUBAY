@@ -94,6 +94,37 @@ def _donor_serostatus_mismatch_display(self, obj):
     return "MISMATCH" if verdict else "agree"
 
 
+# closure_shifted gets words for the first of those two reasons. Its polarity is
+# inverted the same way: a shifted visit is the exception the protocol wants
+# flagged, so the green tick would mean "yes, a closure moved this draw" and the
+# red cross would mark every ordinary on-time visit. Most visits are on time, so
+# the changelist rendered as a column of red crosses over a healthy schedule.
+# Unlike the mismatch flag this one is strictly two-state, so only the colour was
+# doing the wrong work; the wording carries the same two answers without it. Kept
+# to two words because this is a changelist column as well as a form field: the
+# first wording, "on nominal day", wrapped to three lines and tripled the height
+# of every row on the visit list.
+@admin.display(boolean=False)
+def _closure_shifted_display(self, obj):
+    return "SHIFTED" if obj.closure_shifted else "no shift"
+
+
+# release_overdue was the third flag reading backwards, and the loudest of them:
+# it sat in the quantitative inline of every visit page, so a visit whose results
+# all went out inside the window showed a column of red crosses. The false answer
+# also conflates two different situations - a result that needed a release and
+# got one in time, and a result that never needed one at all - which the icon
+# cannot separate but words can. A non-reported row is a QC failure rather than
+# an actionable result, so it gets the "-" placeholder instead of a verdict.
+@admin.display(boolean=False)
+def _release_overdue_display(self, obj):
+    if obj.release_overdue:
+        return "OVERDUE"
+    if obj.result_status != "reported":
+        return "-"
+    return "in time" if obj.requires_release else "not required"
+
+
 def _install_derived_displays(
     admin_class, *, boolean_fields=(), plain_fields=(), choice_fields=()
 ):
@@ -667,9 +698,10 @@ _donor_serostatus_mismatch_display.__name__ = "has_donor_serostatus_mismatch"
 RecipientAdmin.has_donor_serostatus_mismatch = _donor_serostatus_mismatch_display
 _install_derived_displays(
     RecipientVisitAdmin,
-    boolean_fields=("closure_shifted",),
     plain_fields=("nominal_day", "closure_reason", "shift_days_from_nominal"),
 )
+_closure_shifted_display.__name__ = "closure_shifted"
+RecipientVisitAdmin.closure_shifted = _closure_shifted_display
 _install_derived_displays(DonorAdmin, plain_fields=("baseline_serostatus",))
 # plain, not boolean: the Yes/No/unknown icon carries two states plus a gap, and
 # these carry three clinical answers plus "not measured". Words are the only
@@ -686,8 +718,9 @@ _install_derived_displays(
     CMVSerologyInline,
     choice_fields=(("igg_interpretation", SEROLOGY_INTERPRETATION_CHOICES),),
 )
-_install_derived_displays(CMVQuantitativeAdmin, boolean_fields=("release_overdue",))
-_install_derived_displays(CMVQuantitativeInline, boolean_fields=("release_overdue",))
+_release_overdue_display.__name__ = "release_overdue"
+CMVQuantitativeAdmin.release_overdue = _release_overdue_display
+CMVQuantitativeInline.release_overdue = _release_overdue_display
 _install_derived_displays(TBNKPanelAdmin, plain_fields=("cd4_cd8_ratio",))
 _install_derived_displays(TBNKPanelInline, plain_fields=("cd4_cd8_ratio",))
 _install_derived_displays(RenalFunctionAdmin, plain_fields=("eGFR",))
