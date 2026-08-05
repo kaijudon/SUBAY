@@ -107,7 +107,7 @@ def test_recipient_add_form_mismatch_reads_not_comparable_not_false(admin_client
     assert "icon-no.svg" not in html  # no red cross on a record with nothing wrong
 
 
-# --- #19: change-form derived booleans ------------------------------------
+# --- #19: change-form derived values (were booleans until slice 17) -------
 
 @pytest.fixture
 def serology(db):
@@ -118,7 +118,8 @@ def serology(db):
     v = RecipientVisit.objects.create(
         recipient=r, timepoint_label="day_7", actual_visit_date=date(2025, 1, 15)
     )
-    # value >= 2.0 -> is_positive True; igm_value unset -> igm_positive None.
+    # Drawn before the advisory, so 3.0 AU/mL is reactive on the first-generation
+    # cutoff; igm_value unset, so igm_interpretation is None (not measured).
     return CMVSerology.objects.create(
         recipient_visit=v, value=Decimal("3.0"), result_status="reported",
         drawn_date=date(2025, 1, 15),
