@@ -418,7 +418,7 @@ def _comparability3(v):
     NOT `_bool3`, though the Python values are the same three. `_bool3` answers
     "yes, no, or nobody asked", and its None is one more unanswered question
     among many. This column's None is a different claim: the comparison could
-    not be MADE — no paired donor, no recorded serostatus, or a donor serology
+    not be MADE - no paired donor, no recorded serostatus, or a donor serology
     that yielded no baseline (absent, or EQUIVOCAL since slice 17). Every other
     unknown in the snapshot is blank and the manifest publishes column types
     with no value domain, so a blank here would read as one more missing datum
