@@ -10,12 +10,14 @@ Both channels and both generations are AU/mL. The advisory's CMV IgG row reads
 "IU/mL"; that is a transcription error, confirmed with the lab on 2026-08-04
 (DEC-032). There is no unit change and no stored value is ever rescaled.
 """
-from datetime import date
+import importlib
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
 
 from subay.registry.serology_ranges import (
+    ADVISORY_EFFECTIVE,
     EQUIVOCAL,
     GEN1,
     GEN2,
@@ -220,3 +222,26 @@ def test_an_unmeasured_channel_has_no_interpretation(visit):
     )
     assert s.igg_interpretation == REACTIVE
     assert s.igm_interpretation is None  # igm_status defaults to 'missing'
+
+
+def test_the_0020_backfill_still_agrees_with_the_live_rule():
+    """Migration 0020 copies the 2026-06-03 boundary instead of importing it.
+
+    The copy is deliberate: a migration that imports live app code stops applying
+    the day that code is renamed, and a migration that FOLLOWS a corrected
+    boundary would hand a fresh database different stamps than production already
+    carries. Both make the copy right and the drift the only real risk, so the
+    drift is what gets asserted - here, at test time, rather than by coupling the
+    two at migrate time.
+
+    Loaded by path because the module name starts with a digit.
+    """
+    m = importlib.import_module("subay.registry.migrations.0020_slice17_reagent_generation")
+
+    assert m.ADVISORY_EFFECTIVE == ADVISORY_EFFECTIVE
+    assert (m.GEN1, m.GEN2) == (GEN1, GEN2)
+    # The boundary day itself and both sides of it: an off-by-one in either
+    # direction is what a date constant drifts into.
+    for offset in (-1, 0, 1):
+        day = ADVISORY_EFFECTIVE + timedelta(days=offset)
+        assert m._generation_for(day) == generation_for(day), day

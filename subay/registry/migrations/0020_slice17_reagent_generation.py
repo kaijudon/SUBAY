@@ -8,31 +8,52 @@
 # ruling means no stored measurement is ever re-interpreted, and DEC-032 confirms
 # the unit never changed. This migration only labels rows.
 #
-# The rule lives in serology_ranges.generation_for and is unit-tested at the
-# inclusive 2026-06-03 boundary, so this migration holds no logic of its own.
+# The boundary below is a COPY of serology_ranges.ADVISORY_EFFECTIVE, deliberately,
+# and this migration imports nothing from the app. Two reasons, and the second is
+# the one that matters:
+#
+#   1. A migration must keep applying. A module-level import of live code makes
+#      `migrate` on a fresh database - and every test-DB build - fail at import
+#      the day a later slice renames or moves that function. The failure lands in
+#      schema setup, nowhere near the edit that caused it.
+#   2. A migration is a historical record, not a live rule. If the advisory date
+#      were ever corrected, production rows would keep the stamps they were given
+#      under the old boundary, while a replayed migration would hand a fresh
+#      database different ones. Following the correction is the bug, not the fix.
+#
+# The duplication is guarded rather than trusted:
+# test_serology_ranges.test_the_0020_backfill_still_agrees_with_the_live_rule
+# asserts this constant and this function still match serology_ranges, so drift
+# fails a test run instead of a migrate.
+
+from datetime import date
 
 from django.db import migrations, models
 
-from subay.registry.serology_ranges import generation_for
+ADVISORY_EFFECTIVE = date(2026, 6, 3)
+GEN1 = "gen1"
+GEN2 = "gen2"
+
+
+def _generation_for(drawn_date):
+    """The 2026-06-03 rule as it stood when this migration was written. Inclusive
+    on the boundary: a draw ON the advisory date is second generation."""
+    return GEN2 if drawn_date >= ADVISORY_EFFECTIVE else GEN1
 
 
 def stamp_reagent_generation(apps, schema_editor):
-    """Backfill by CALLING generation_for, never by re-expressing its boundary.
+    """Stamp every existing row with the generation its draw date implies.
 
     Deliberately a row loop rather than two bulk `drawn_date__lt` updates. The
-    ORM version would be one statement instead of a scan, but it would restate
-    the inclusive boundary in a second place, and this migration would then not
-    follow if that boundary were ever corrected. Calling the function is what
-    makes its unit test at the 2026-06-03 edge cover this code too, which is the
-    agreed reason no migration-test harness was added.
-
-    Study scale makes the loop free: this is a few hundred rows at most.
+    ORM version would be one statement instead of a scan, but it would put the
+    inclusive boundary into a queryset expression where the drift test cannot
+    reach it. Study scale makes the loop free: a few hundred rows at most.
     """
     for model_name in ("CMVSerology", "HistoricalCMVSerology"):
         Model = apps.get_model("registry", model_name)
         rows = list(Model.objects.all())
         for row in rows:
-            row.reagent_generation = generation_for(row.drawn_date)
+            row.reagent_generation = _generation_for(row.drawn_date)
         Model.objects.bulk_update(rows, ["reagent_generation"], batch_size=500)
 
 
