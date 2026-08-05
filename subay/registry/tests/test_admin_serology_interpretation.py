@@ -95,8 +95,14 @@ def test_the_admin_no_longer_surfaces_the_retired_booleans():
 
 def test_the_reagent_generation_is_visible_to_a_verifier():
     """Without it a clinician cannot tell which ranges a row was read against,
-    and would have to know the advisory date by heart."""
-    assert "reagent_generation" in CMVSerologyAdmin.list_display
+    and would have to know the advisory date by heart.
+
+    The column is rendered by a callable rather than the field itself, so this
+    also pins that the callable still sorts by the stored value: a generation
+    column a verifier cannot order by is half a column.
+    """
+    assert "reagent_generation_label" in CMVSerologyAdmin.list_display
+    assert CMVSerologyAdmin.reagent_generation_label.admin_order_field == "reagent_generation"
 
 
 def test_the_visit_inline_can_set_the_reagent_generation():
@@ -288,3 +294,25 @@ def test_the_changelist_reads_each_row_against_its_own_generation(admin_client, 
     # And the generation that explains the difference is on the row.
     assert "1st generation" in html
     assert "2nd generation" in html
+
+
+@pytest.mark.django_db
+def test_the_changelist_cell_drops_the_advisory_date_from_the_label(admin_client, visit):
+    """The row says which generation; the form says which dates.
+
+    The full choice label is what a data manager picks from when correcting a
+    late first-generation sample, so the change form keeps it. In an 98px
+    changelist column it wrapped to three lines and set every row to 87px, so
+    the cell shows the ordinal alone.
+
+    Asserted on the CELL, not on the page: the filter rail renders the same
+    choices with their dates intact, so a bare `not in html` would fail for a
+    reason that has nothing to do with the row.
+    """
+    _serology(visit, value="1.50", drawn=GEN1_DRAW)
+    html = admin_client.get(reverse("admin:registry_cmvserology_changelist")).content.decode()
+    assert '<td class="field-reagent_generation_label">1st generation</td>' in html
+    # The dates are still reachable, one click away on the change form.
+    assert "1st generation (before 2026-06-03)" in admin_client.get(
+        reverse("admin:registry_cmvserology_add")
+    ).content.decode()

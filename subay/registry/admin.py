@@ -404,7 +404,7 @@ _LAB_SUBJECT_FKS = ("recipient_visit", "donor")
 class CMVSerologyAdmin(_EditorDefaultedAdmin):
     list_display = (
         "id", "recipient_visit", "donor", "value", "igg_interpretation",
-        "reagent_generation", "result_status",
+        "reagent_generation_label", "result_status",
         "drawn_date", "repeat_status", "verified_by", "is_verified",
     )
     # `repeats` autocompletes against this same admin, which is why search_fields
@@ -429,6 +429,24 @@ class CMVSerologyAdmin(_EditorDefaultedAdmin):
         if obj.repeats_id:
             return f"Repeats #{obj.repeats_id}"
         return ""
+
+    @admin.display(ordering="reagent_generation", description="Reagent generation")
+    def reagent_generation_label(self, obj):
+        """The choice label carries the advisory date, and on the change form it
+        should: an operator correcting a late first-generation sample is choosing
+        between two dates, not two ordinals.
+
+        On the changelist that parenthetical is dead weight that costs three
+        lines. Measured at 1440px, "2nd generation (from 2026-06-03)" wrapped in
+        a 98px column and set every row on the list to 87px against the 40px of
+        every other changelist in the app. The date is still one click away on
+        the row, and in the filter rail beside it.
+
+        Named apart from the field on purpose. lookup_field() resolves a real
+        model field BEFORE it consults the ModelAdmin, so a method named
+        `reagent_generation` would be found second and never called - the
+        opposite of the property case the derived-display wrappers rely on."""
+        return obj.get_reagent_generation_display().split(" (")[0] or "-"
 
 
 @admin.register(CMVQuantitative)

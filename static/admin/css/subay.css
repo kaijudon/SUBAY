@@ -203,6 +203,18 @@ td, th { padding: 11px 16px; border-bottom: 1px solid var(--subay-line-soft); fo
 #changelist table thead th,
 #changelist table thead th a { white-space: normal; }
 
+/* The rule above sizes a column to the widest WORD of its header, which is the
+   right trade for a one-glyph boolean but not for the derived verdict columns:
+   they now answer in words, and "RELEASE OVERDUE" leaves 86px for a two-word
+   answer that needs about 95. The verdict wrapped, and one wrapped cell sets
+   the height of its whole row - measured 55px against 40px for every other row
+   on the viral-load list. These are short fixed phrases from a closed set, so
+   holding them on one line cannot run away with the table width. */
+#changelist td.field-release_overdue,
+#changelist td.field-closure_shifted,
+#changelist td.field-has_donor_serostatus_mismatch,
+#changelist td.field-reagent_generation_label { white-space: nowrap; }
+
 /* A tabular inline carries every editable column of its model, which for the
    serology inline is wider than the 1085px content column. `.module` above sets
    overflow:hidden so children clip to the rounded corner, and that turns the

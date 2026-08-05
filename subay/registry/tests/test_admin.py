@@ -72,8 +72,10 @@ def test_serology_admin_shows_both_channel_interpretations_readonly():
     ma = admin.site._registry[CMVSerology]
     assert "igg_interpretation" in ma.readonly_fields
     assert "igm_interpretation" in ma.readonly_fields
-    # The generation those readings were made against travels with them.
-    assert "reagent_generation" in ma.list_display
+    # The generation those readings were made against travels with them. The
+    # column is rendered by a callable, since a real field beats a same-named
+    # ModelAdmin method in lookup_field(), so the name carries a suffix.
+    assert "reagent_generation_label" in ma.list_display
 
 
 def test_recipient_admin_has_other_condition_inline_and_mismatch_readonly():
