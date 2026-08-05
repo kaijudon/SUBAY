@@ -24,7 +24,7 @@ from subay.registry.models import (
     VISIT_SHIFT_CAP_DAYS,
 )
 from subay.registry.scheduling import TIMEPOINT_OFFSETS
-from subay.registry.serology_ranges import GEN2, bands_for
+from subay.registry.serology_ranges import GEN1, GEN2, bands_for
 from subay.registry.views_public import TARGET_RECIPIENTS
 
 
@@ -272,3 +272,52 @@ def test_login_offers_a_way_back_to_the_landing_page(client):
     """
     body = client.get(reverse("admin:login")).content.decode()
     assert f'href="{reverse("public:landing")}"' in body
+
+
+@pytest.mark.django_db
+def test_protocol_does_not_publish_a_zero_width_grayzone(client):
+    """Under a single-cutoff generation the band's two edges coincide, and the
+    page must not render that as a grayzone.
+
+    serology_ranges keeps GEN1 as a band whose edges are equal so one comparison
+    covers both generations. Interpolated into a sentence written for GEN2 it
+    reads "2.00 to under 2.00" - an equivocal range that exists and is empty,
+    stated to an anonymous reader as clinical fact. The encoding is right; what
+    it must not do is reach prose untranslated.
+    """
+    with mock.patch("subay.registry.views_public.generation_for", return_value=GEN1):
+        body = client.get(reverse("public:protocol")).content.decode()
+
+    igg_equivocal, igg_reactive = bands_for(GEN1)["igg"]
+    assert igg_equivocal == igg_reactive  # the premise, asserted not assumed
+    assert f"{igg_equivocal} to under {igg_reactive}" not in body
+    assert "single cutoff with no grayzone" in body
+    # And the rule about landing inside one goes with it - nothing can.
+    assert "recorded as equivocal" not in body
+
+
+@pytest.mark.django_db
+def test_protocol_says_which_reagent_the_published_ranges_belong_to(client):
+    """Cutoffs with no period attached leave a reader holding an older result
+    unable to tell these values were never applied to it.
+
+    DEC-030 freezes a pre-advisory row at its original reading, and that freeze
+    is only legible to someone outside the study if the page names the boundary.
+    """
+    body = client.get(reverse("public:protocol")).content.decode()
+    assert "3 June 2026" in body
+    assert "in force since" in body
+    assert "never re-interpreted" in body
+
+
+@pytest.mark.django_db
+def test_protocol_grayzone_wording_follows_the_generation_in_force(client):
+    """The two branches are not independently worded pages: whichever generation
+    is in force, the sentence has to describe the bands that generation actually
+    has."""
+    with mock.patch("subay.registry.views_public.generation_for", return_value=GEN2):
+        body = client.get(reverse("public:protocol")).content.decode()
+    igg_equivocal, igg_reactive = bands_for(GEN2)["igg"]
+    assert f"{igg_equivocal} to under {igg_reactive}" in body
+    assert "single cutoff with no grayzone" not in body
+    assert "recorded as equivocal" in body
