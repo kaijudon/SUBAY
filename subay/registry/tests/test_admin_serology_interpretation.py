@@ -99,6 +99,35 @@ def test_the_reagent_generation_is_visible_to_a_verifier():
     assert "reagent_generation" in CMVSerologyAdmin.list_display
 
 
+def test_the_visit_inline_can_set_the_reagent_generation():
+    """The visit page is where a serology row is normally entered, so it is where
+    a late-arriving first-generation sample has to be correctable.
+
+    It was excluded while the inline's container clipped its overflow: an added
+    column went out of reach rather than merely making the table wide. The CSS
+    now scrolls the inline, so the width objection no longer buys anything, and
+    leaving it out means save() stamps gen2 with nothing on screen to say so.
+    """
+    assert "reagent_generation" not in CMVSerologyInline.exclude
+    # `repeats` stays out for a reason width does not cover: it is a select over
+    # every serology row in the register.
+    assert "repeats" in CMVSerologyInline.exclude
+
+
+@pytest.mark.django_db
+def test_the_visit_page_renders_the_generation_field_in_the_inline(admin_client, visit):
+    """Declared-and-excluded is invisible in the same way as never-declared, so
+    this asserts the rendered page rather than the ModelAdmin attribute."""
+    _serology(visit, value="1.50")
+    html = admin_client.get(
+        reverse("admin:registry_recipientvisit_change", args=[visit.pk])
+    ).content.decode()
+
+    assert "serologies-0-reagent_generation" in html
+    # And the option an operator would pick for a late first-generation sample.
+    assert "1st generation (before 2026-06-03)" in html
+
+
 # --- what actually renders -------------------------------------------------
 
 

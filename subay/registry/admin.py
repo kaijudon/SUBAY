@@ -180,17 +180,18 @@ class CMVSerologyInline(admin.TabularInline):
     # IgG only, as before. The inline sits under a visit where the operator is
     # typing the value; the full picture is one click away on the serology admin.
     readonly_fields = ("igg_interpretation",)
-    # reagent_generation is a real field, so it would otherwise appear here as a
-    # wide select carrying "2nd generation (from 2026-06-03)". This inline already
-    # overflows its container (slice 16), and the container clips with overflow-x
-    # hidden rather than scrolling, so a widened table does not just look bad - it
-    # puts columns out of reach entirely. save() fills the generation from the
-    # draw date, and the serology change form is where it can be overridden and
-    # where verification actually happens, so nothing is lost by omitting it here.
-    # `repeats` is omitted for the same width reason, and for a second one: it is a
-    # select over every serology row in the register, which is unusable inline and
-    # is autocompleted on the serology change form instead.
-    exclude = ("reagent_generation", "repeats")
+    # reagent_generation stays IN, next to the interpretation it decides. It was
+    # omitted while `.module` clipped this inline with overflow-x hidden, which
+    # turned any added column into a column out of reach; static/admin/css/subay.css
+    # now scrolls the inline instead, so width is no longer a reason to hide a
+    # field. Keeping it matters because this is where a serology row is normally
+    # entered: without it, a late-arriving first-generation sample is silently
+    # stamped gen2 by save() with nothing on screen to correct, and a reviewer
+    # reads "Reactive" with no way to see which bands produced it.
+    # `repeats` stays out - not for width, but because it is a select over every
+    # serology row in the register, which is unusable inline and is autocompleted
+    # on the serology change form instead.
+    exclude = ("repeats",)
 
 
 class CMVQuantitativeInline(admin.TabularInline):
