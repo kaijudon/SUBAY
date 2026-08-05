@@ -229,9 +229,21 @@ def test_export_serology_checksum_is_reproducible(seeded_both_generations, tmp_p
     )
 
 
-def test_positivity_booleans_survive_this_ticket():
-    """Expand-contract guard rail. Ticket 04 migrates a caller; retiring the
-    properties is ticket 07's job, and doing it early would break the tickets
-    that have not been migrated yet."""
-    assert isinstance(CMVSerology.is_positive, property)
-    assert isinstance(CMVSerology.igm_positive, property)
+def test_the_export_outlived_the_properties_it_was_migrated_off():
+    """The other half of the expand-contract guard rail.
+
+    This asserted the two booleans still EXISTED, because ticket 04 migrated the
+    export off them while other tickets had not moved yet and deleting early
+    would have broken those. Ticket 07 is the deletion, so the guard rail
+    reverses: what has to hold now is that the export kept working without them.
+
+    Asserted here rather than left to the other export tests because this is the
+    file that pinned the dependency, and an inverted guard rail belongs where the
+    original one was so the history reads in one place.
+    """
+    assert not hasattr(CMVSerology, "is_positive")
+    assert not hasattr(CMVSerology, "igm_positive")
+    assert not hasattr(CMVSerology, "POSITIVE_THRESHOLD")
+    # The successors the export actually reads.
+    assert isinstance(CMVSerology.igg_interpretation, property)
+    assert isinstance(CMVSerology.igm_interpretation, property)

@@ -73,7 +73,7 @@ def test_lab_failure_is_missing_observation_on_result(db):
 
     s.refresh_from_db()
     assert s.value is None
-    assert s.is_positive is None
+    assert s.igg_interpretation is None  # was is_positive, retired in slice 17
     assert s.result_status == "missing"
 
 

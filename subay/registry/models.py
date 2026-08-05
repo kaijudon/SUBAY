@@ -2,8 +2,8 @@
 
 The abstract BaseSubject shares identity columns into concrete Recipient/Donor
 without emitting its own table. Derived clinical values (age, risk_stratum,
-is_positive) are @property and never stored, so a stored fact and its computed
-value can never silently disagree.
+igg_interpretation) are @property and never stored, so a stored fact and its
+computed value can never silently disagree.
 """
 from datetime import date, timedelta
 from decimal import Decimal
@@ -638,11 +638,15 @@ class CMVSerology(ExactlyOneParentMixin, VerificationMixin):
     """One lab result attached to EXACTLY ONE parent: a recipient visit OR a donor.
 
     Enforced twice: clean() for a friendly admin error, a DB CheckConstraint for an
-    unbreakable guarantee on every write path. value is Snibe Maglumi 600 AU/mL;
-    is_positive is derived at the 2.0 AU/mL binary threshold.
-    """
+    unbreakable guarantee on every write path. value is Snibe Maglumi 600 AU/mL,
+    read against the bands its reagent generation implies (serology_ranges).
 
-    POSITIVE_THRESHOLD = Decimal("2.0")
+    There is no single positivity threshold on this model. One shared 2.0 AU/mL
+    cutoff was retired in slice 17: it cannot answer both channels once they
+    diverge, and it has no way to say "equivocal". The first-generation edge
+    survives as GEN1_REACTIVE_FROM_AU_ML, since frozen rows are still read
+    against it.
+    """
 
     recipient_visit = models.ForeignKey(
         RecipientVisit,
@@ -756,20 +760,6 @@ class CMVSerology(ExactlyOneParentMixin, VerificationMixin):
             ),
             *VerificationMixin.verification_constraints("cmvserology_verification"),
         ]
-
-    @property
-    def is_positive(self):
-        if self.value is None:
-            return None
-        return self.value >= self.POSITIVE_THRESHOLD
-
-    @property
-    def igm_positive(self):
-        """IgM positivity at the SAME locked 2.0 AU/mL single cutoff. Derived,
-        never stored — no equivocal band, only True / False / None (not measured)."""
-        if self.igm_value is None:
-            return None
-        return self.igm_value >= self.POSITIVE_THRESHOLD
 
     @property
     def effective_reagent_generation(self):

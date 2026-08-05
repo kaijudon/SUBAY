@@ -78,15 +78,19 @@ def test_every_serology_surface_shows_the_interpretation():
 
 
 def test_the_admin_no_longer_surfaces_the_retired_booleans():
-    """The properties still exist for ticket 07 to retire, but nothing an
-    operator looks at is derived from the 2.0 AU/mL cutoff any more."""
+    """Nothing an operator looks at is derived from the 2.0 AU/mL cutoff.
+
+    The name checks stay after ticket 07 deleted the properties. An admin
+    surface is a list of STRINGS, so re-adding "is_positive" to one would not
+    raise AttributeError the way a real caller now does: Django would fail at
+    render, or on a bad day render an empty column. The string is the only thing
+    that can be asserted here, and it is worth asserting for exactly that
+    reason.
+    """
     for surface in (CMVSerologyAdmin.list_display, CMVSerologyAdmin.readonly_fields):
         assert "is_positive" not in surface
         assert "igm_positive" not in surface
     assert "is_positive" not in CMVSerologyInline.readonly_fields
-    # Still on the model, untouched.
-    assert isinstance(CMVSerology.is_positive, property)
-    assert isinstance(CMVSerology.igm_positive, property)
 
 
 def test_the_reagent_generation_is_visible_to_a_verifier():
