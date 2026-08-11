@@ -3,6 +3,7 @@ from django.contrib import admin
 from django.contrib.admin import SimpleListFilter
 from simple_history.admin import SimpleHistoryAdmin
 
+from .serology_ranges import SEROLOGY_INTERPRETATION_CHOICES
 from .models import (
     Aliquot,
     ClosureDay,
@@ -51,13 +52,25 @@ __all__ = ["SubayAdminSite"]
 # `_install_derived_displays` attaches one wrapper per name so the admins stay
 # declarative instead of carrying ~30 near-identical stubs.
 
-def _derived_display(attr_name, *, boolean):
+def _derived_display(attr_name, *, boolean, choices=None):
+    """`choices` maps a derived property's stored code to its human label.
+
+    Django gives real choice FIELDS a get_FOO_display(), but these are @property
+    values, so nothing translates them and the raw code reaches the page - a
+    clinician reading "non_reactive" in a column. The domain value has to stay a
+    code, since the export and every comparison depend on it, so the translation
+    belongs here at the rendering edge and nowhere else.
+    """
+    labels = dict(choices or ())
+
     @admin.display(boolean=boolean)
     def _wrapper(self, obj):
         value = getattr(obj, attr_name)
         if boolean:
             return value  # None -> unknown icon, True/False -> Yes/No icon
-        return "-" if value is None or value == "" else value
+        if value is None or value == "":
+            return "-"
+        return labels.get(value, value)
 
     # Keep the property's own name so labels and readonly_fields keys are unchanged.
     _wrapper.__name__ = attr_name
@@ -65,11 +78,63 @@ def _derived_display(attr_name, *, boolean):
     return _wrapper
 
 
-def _install_derived_displays(admin_class, *, boolean_fields=(), plain_fields=()):
+# has_donor_serostatus_mismatch gets its own renderer rather than the boolean
+# icon. Two reasons, both about not alarming a reviewer over a healthy record.
+# The icon's polarity is inverted here: a green tick would mean "yes, mismatch"
+# (a problem) and a red cross would mean "no mismatch" (the normal, wanted state),
+# so a clean cohort renders as a column of red crosses. And since slice 17 the
+# property has three answers, where the third is "we could not compare these" -
+# the grey unknown icon reads as a missing value rather than as the deliberate
+# statement it is. Words carry both without the colour doing the wrong work.
+@admin.display(description="donor serostatus vs donor serology")
+def _donor_serostatus_mismatch_display(self, obj):
+    verdict = obj.has_donor_serostatus_mismatch
+    if verdict is None:
+        return "not comparable"
+    return "MISMATCH" if verdict else "agree"
+
+
+# closure_shifted gets words for the first of those two reasons. Its polarity is
+# inverted the same way: a shifted visit is the exception the protocol wants
+# flagged, so the green tick would mean "yes, a closure moved this draw" and the
+# red cross would mark every ordinary on-time visit. Most visits are on time, so
+# the changelist rendered as a column of red crosses over a healthy schedule.
+# Unlike the mismatch flag this one is strictly two-state, so only the colour was
+# doing the wrong work; the wording carries the same two answers without it. Kept
+# to two words because this is a changelist column as well as a form field: the
+# first wording, "on nominal day", wrapped to three lines and tripled the height
+# of every row on the visit list.
+@admin.display(boolean=False)
+def _closure_shifted_display(self, obj):
+    return "SHIFTED" if obj.closure_shifted else "no shift"
+
+
+# release_overdue was the third flag reading backwards, and the loudest of them:
+# it sat in the quantitative inline of every visit page, so a visit whose results
+# all went out inside the window showed a column of red crosses. The false answer
+# also conflates two different situations - a result that needed a release and
+# got one in time, and a result that never needed one at all - which the icon
+# cannot separate but words can. A non-reported row is a QC failure rather than
+# an actionable result, so it gets the "-" placeholder instead of a verdict.
+@admin.display(boolean=False)
+def _release_overdue_display(self, obj):
+    if obj.release_overdue:
+        return "OVERDUE"
+    if obj.result_status != "reported":
+        return "-"
+    return "in time" if obj.requires_release else "not required"
+
+
+def _install_derived_displays(
+    admin_class, *, boolean_fields=(), plain_fields=(), choice_fields=()
+):
+    """`choice_fields` takes (name, choices) pairs for coded derived values."""
     for name in boolean_fields:
         setattr(admin_class, name, _derived_display(name, boolean=True))
     for name in plain_fields:
         setattr(admin_class, name, _derived_display(name, boolean=False))
+    for name, choices in choice_fields:
+        setattr(admin_class, name, _derived_display(name, boolean=False, choices=choices))
 
 
 # --- Front-end 1 (issue #2): filters for DERIVED values ---
@@ -143,7 +208,21 @@ class CMVSerologyInline(admin.TabularInline):
     model = CMVSerology
     fk_name = "recipient_visit"
     extra = 0
-    readonly_fields = ("is_positive",)
+    # IgG only, as before. The inline sits under a visit where the operator is
+    # typing the value; the full picture is one click away on the serology admin.
+    readonly_fields = ("igg_interpretation",)
+    # reagent_generation stays IN, next to the interpretation it decides. It was
+    # omitted while `.module` clipped this inline with overflow-x hidden, which
+    # turned any added column into a column out of reach; static/admin/css/subay.css
+    # now scrolls the inline instead, so width is no longer a reason to hide a
+    # field. Keeping it matters because this is where a serology row is normally
+    # entered: without it, a late-arriving first-generation sample is silently
+    # stamped gen2 by save() with nothing on screen to correct, and a reviewer
+    # reads "Reactive" with no way to see which bands produced it.
+    # `repeats` stays out - not for width, but because it is a select over every
+    # serology row in the register, which is unusable inline and is autocompleted
+    # on the serology change form instead.
+    exclude = ("repeats",)
 
 
 class CMVQuantitativeInline(admin.TabularInline):
@@ -323,13 +402,97 @@ _LAB_SUBJECT_FKS = ("recipient_visit", "donor")
 
 @admin.register(CMVSerology)
 class CMVSerologyAdmin(_EditorDefaultedAdmin):
+    # Eleven columns needed 1116px inside the 798px this changelist gets at
+    # 1440, so 318px of it - including the whole verification state - sat behind
+    # a horizontal scroll. Every column below earns its width: the two subject
+    # columns are collapsed into one (the model already guarantees exactly one is
+    # set), and so are the two verification columns, which carried one bit
+    # between them.
     list_display = (
-        "id", "recipient_visit", "donor", "value", "is_positive", "result_status",
-        "drawn_date", "verified_by", "is_verified",
+        "id", "subject", "value", "igg_interpretation",
+        "reagent_generation_label", "result_status",
+        "drawn_date", "repeat_status", "verification",
     )
-    autocomplete_fields = _LAB_SUBJECT_FKS
-    list_filter = ("is_verified", "result_status")
-    readonly_fields = ("is_positive", "igm_positive")  # derived at the 2.0 AU/mL threshold
+    # subject/verification read through both FKs on every row.
+    list_select_related = ("recipient_visit", "donor", "verified_by")
+    # `repeats` autocompletes against this same admin, which is why search_fields
+    # is here: a repeat is entered by finding the earlier draw by subject.
+    search_fields = ("recipient_visit__recipient__subject_id", "donor__subject_id")
+    autocomplete_fields = _LAB_SUBJECT_FKS + ("repeats",)
+    list_filter = ("is_verified", "result_status", "reagent_generation")
+    # Read against THIS ROW's reagent generation, which is why the generation is
+    # shown beside them: a verifier signing off needs to see which ranges were
+    # applied without knowing the 2026-06-03 advisory date by heart.
+    readonly_fields = ("igg_interpretation", "igm_interpretation")
+
+    @admin.display(ordering="recipient_visit", description="Subject")
+    def subject(self, obj):
+        """One column for what ExactlyOneParentMixin already guarantees is one
+        fact. A serology attaches to a recipient visit XOR a donor, so the two
+        columns were each half empty, and the empty one rendered "-" on every
+        row while costing 80px of a table that had none to spare.
+
+        The visit's own __str__ ends in its draw date, which the drawn-date
+        column beside it already carries; the timepoint is what identifies the
+        row here."""
+        visit = obj.recipient_visit
+        if visit is not None:
+            return f"{visit.recipient_id} {visit.timepoint_label}"
+        return f"{obj.donor_id} donor" if obj.donor_id else "-"
+
+    @admin.display(ordering="is_verified", description="Verified")
+    def verification(self, obj):
+        """`verified_by` and `is_verified` carried one bit between them: an
+        unverified row showed a dash and a red cross, a verified one a name and a
+        tick. Merging them frees 78px and drops 68 red crosses off a 68-row list.
+
+        Those crosses were not wrong the way the derived flags were - unverified
+        IS the state four-eyes wants finished - but an icon on every row marks
+        nothing, and the queue a reviewer actually works from is the is_verified
+        filter in the rail, which is untouched. The pending state stays in words
+        so the column still reads as work outstanding rather than as blank."""
+        return obj.verified_by if obj.is_verified else "pending"
+
+    @admin.display(description="Repeat")
+    def repeat_status(self, obj):
+        """Words, not a boolean icon. Django renders a False BooleanField in
+        list_display as a red cross, and "this draw does not need repeating" is the
+        healthy state - the same misreading ticket 03 fixed for the interpretation
+        column. A blank cell for the ordinary case also keeps the eye on the few
+        rows that are actually pending.
+
+        "Awaiting" rather than "Awaiting repeat" under a header that already says
+        Repeat: the longer phrase is the widest thing in the column and set its
+        width for the sake of a word the header repeats."""
+        if obj.awaiting_repeat:
+            return "Awaiting"
+        if obj.repeats_id:
+            return f"Repeats #{obj.repeats_id}"
+        return ""
+
+    @admin.display(ordering="reagent_generation", description="Reagent generation")
+    def reagent_generation_label(self, obj):
+        """The choice label carries the advisory date, and on the change form it
+        should: an operator correcting a late first-generation sample is choosing
+        between two dates, not two ordinals.
+
+        On the changelist that parenthetical is dead weight that costs three
+        lines. Measured at 1440px, "2nd generation (from 2026-06-03)" wrapped in
+        a 98px column and set every row on the list to 87px against the 40px of
+        every other changelist in the app. The date is still one click away on
+        the row, and in the filter rail beside it.
+
+        Abbreviated further to "2nd gen" under a header that already reads
+        "Reagent generation". That is 40px, and it is what pays for holding the
+        IgG reading beside it on one line: "Non-reactive" breaks at its hyphen
+        otherwise.
+
+        Named apart from the field on purpose. lookup_field() resolves a real
+        model field BEFORE it consults the ModelAdmin, so a method named
+        `reagent_generation` would be found second and never called - the
+        opposite of the property case the derived-display wrappers rely on."""
+        code = obj.get_reagent_generation_display().split(" (")[0]
+        return code.replace("generation", "gen") if code else "-"
 
 
 @admin.register(CMVQuantitative)
@@ -591,19 +754,45 @@ class ProtocolDeviationAdmin(SimpleHistoryAdmin):
 # severity_tier is a stored CharField, not a property, so it is left untouched.
 _install_derived_displays(
     RecipientAdmin,
-    boolean_fields=("has_donor_serostatus_mismatch",),
     plain_fields=("age", "risk_stratum", "cmv_episode_summary"),
 )
+# Attached under the property's own name so list_display / readonly_fields keys
+# stay unchanged, the same shadowing trick _derived_display uses.
+_donor_serostatus_mismatch_display.__name__ = "has_donor_serostatus_mismatch"
+RecipientAdmin.has_donor_serostatus_mismatch = _donor_serostatus_mismatch_display
 _install_derived_displays(
     RecipientVisitAdmin,
-    boolean_fields=("closure_shifted",),
     plain_fields=("nominal_day", "closure_reason", "shift_days_from_nominal"),
 )
+_closure_shifted_display.__name__ = "closure_shifted"
+RecipientVisitAdmin.closure_shifted = _closure_shifted_display
 _install_derived_displays(DonorAdmin, plain_fields=("baseline_serostatus",))
-_install_derived_displays(CMVSerologyAdmin, boolean_fields=("is_positive", "igm_positive"))
-_install_derived_displays(CMVSerologyInline, boolean_fields=("is_positive",))
-_install_derived_displays(CMVQuantitativeAdmin, boolean_fields=("release_overdue",))
-_install_derived_displays(CMVQuantitativeInline, boolean_fields=("release_overdue",))
+# plain, not boolean: the Yes/No/unknown icon carries two states plus a gap, and
+# these carry three clinical answers plus "not measured". Words are the only
+# rendering that fits. The existing installer already handles non-boolean fields,
+# so no new helper is needed.
+_install_derived_displays(
+    CMVSerologyAdmin,
+    choice_fields=(
+        ("igg_interpretation", SEROLOGY_INTERPRETATION_CHOICES),
+        ("igm_interpretation", SEROLOGY_INTERPRETATION_CHOICES),
+    ),
+)
+_install_derived_displays(
+    CMVSerologyInline,
+    choice_fields=(("igg_interpretation", SEROLOGY_INTERPRETATION_CHOICES),),
+)
+# Django titles these from the property name, and "Igg interpretation" is both
+# wrong about the capital G and the widest thing in its changelist column - which
+# is what sets the column's width, on a list that has none to give. The readings
+# underneath are at most twelve characters. Same label on the change form, where
+# it also reads better than the auto-titled version.
+CMVSerologyAdmin.igg_interpretation.short_description = "IgG reading"
+CMVSerologyAdmin.igm_interpretation.short_description = "IgM reading"
+CMVSerologyInline.igg_interpretation.short_description = "IgG reading"
+_release_overdue_display.__name__ = "release_overdue"
+CMVQuantitativeAdmin.release_overdue = _release_overdue_display
+CMVQuantitativeInline.release_overdue = _release_overdue_display
 _install_derived_displays(TBNKPanelAdmin, plain_fields=("cd4_cd8_ratio",))
 _install_derived_displays(TBNKPanelInline, plain_fields=("cd4_cd8_ratio",))
 _install_derived_displays(RenalFunctionAdmin, plain_fields=("eGFR",))

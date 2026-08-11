@@ -131,16 +131,31 @@ VISIT_COLUMNS = [
 # blanked entirely (consistent with donor-attached serology, DEC-006). The row
 # still lists the draw record without ever emitting the calendar date.
 DONORVISIT_COLUMNS = [("id", "i"), ("donor", "c"), ("day_offset", "i")]
+# `reagent_generation` is deliberately NOT here. It reads as a lab detail, but it
+# is a pure function of the draw date - generation_for() returns GEN2 exactly when
+# the draw fell on or after the 2026-06-03 advisory - so shipping it would publish
+# which side of a known calendar boundary every draw sits on. Paired with
+# day_offset that narrows the transplant date to a window, which is the whole
+# disclosure the day-offset rule exists to prevent. The interpretation the analyst
+# actually needs is already materialized below, read against the right bands inside
+# SUBAY (DEC-030); raw `value`/`igm_value` stay alongside it so an analyst can
+# re-band independently of what SUBAY decided.
 SEROLOGY_COLUMNS = [
     ("id", "i"),
     ("parent_type", "c"),
     ("parent_id", "c"),
     ("value", "d"),
-    ("is_positive", "c"),
     ("result_status", "c"),
+    ("igg_interpretation", "c"),  # materialized derived value (Slice 17)
     ("igm_value", "d"),
     ("igm_status", "c"),
-    ("igm_positive", "c"),  # materialized derived value (Slice 05)
+    ("igm_interpretation", "c"),  # materialized derived value (Slice 17)
+    # The earlier draw this row repeats, by export row id, or blank. The PI's rule
+    # is that a grayzone result is excluded from analysis until a repeat resolves
+    # it, and that exclusion happens in R against this file, so R has to be able to
+    # see the pair as a pair. Safe to publish: it is an internal row id pointing at
+    # the `id` column already in this file, carrying no calendar or subject fact.
+    ("repeats", "i"),
     ("day_offset", "i"),
 ]
 # Long viral-load series: one row per CMVQuantitative result (Slice 05). A
@@ -392,6 +407,29 @@ def _bool3(v):
     return "true" if v else "false"
 
 
+# The third state of `has_donor_serostatus_mismatch`, spelled out rather than
+# left blank.
+NOT_COMPARABLE = "not_comparable"
+
+
+def _comparability3(v):
+    """`has_donor_serostatus_mismatch` -> "true" / "false" / "not_comparable".
+
+    NOT `_bool3`, though the Python values are the same three. `_bool3` answers
+    "yes, no, or nobody asked", and its None is one more unanswered question
+    among many. This column's None is a different claim: the comparison could
+    not be MADE - no paired donor, no recorded serostatus, or a donor serology
+    that yielded no baseline (absent, or EQUIVOCAL since slice 17). Every other
+    unknown in the snapshot is blank and the manifest publishes column types
+    with no value domain, so a blank here would read as one more missing datum
+    to an analyst working from the file alone. Naming it is what keeps
+    `sum(x == "false")` an honest count of pairs that were checked and agreed.
+    """
+    if v is None:
+        return NOT_COMPARABLE
+    return "true" if v else "false"
+
+
 class Command(BaseCommand):
     help = "Write a versioned, de-identified CSV snapshot (dates as day-offsets from kt_date)."
 
@@ -465,7 +503,7 @@ class Command(BaseCommand):
                      _bool3(r.has_diabetes), _bool3(r.has_hypertension),
                      r.dialysis_vintage_months if r.dialysis_vintage_months is not None else "",
                      r.induction_agent or "",
-                     _bool3(r.has_donor_serostatus_mismatch),
+                     _comparability3(r.has_donor_serostatus_mismatch),
                      r.donor_id or "",
                      r.completion_status,
                      _bool3(r.sequencing_included),
@@ -533,10 +571,17 @@ class Command(BaseCommand):
                     parent_type, parent_id, offset = "donor", s.donor_id, ""
                 value_cell = s.value if s.value is not None else ""
                 igm_value_cell = s.igm_value if s.igm_value is not None else ""
-                igm_positive_cell = "" if s.igm_positive is None else s.igm_positive
-                w.writerow([s.id, parent_type, parent_id, value_cell, s.is_positive,
-                            s.result_status, igm_value_cell, s.igm_status,
-                            igm_positive_cell, offset])
+                # Blank means "not measured" and nothing else. `equivocal` is a
+                # value in this column, not an absence: the whole point of the
+                # three-state reading is that an indeterminate result stays
+                # distinguishable from one that was never obtained.
+                igg_cell = s.igg_interpretation or ""
+                igm_cell = s.igm_interpretation or ""
+                w.writerow([s.id, parent_type, parent_id,
+                            value_cell, s.result_status, igg_cell,
+                            igm_value_cell, s.igm_status, igm_cell,
+                            s.repeats_id if s.repeats_id is not None else "",
+                            offset])
 
     def _write_quantitatives(self, base):
         with (base / "cmvquantitative.csv").open("w", newline="") as fh:

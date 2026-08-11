@@ -61,10 +61,21 @@ def test_quantitative_is_registered():
     assert CMVQuantitative in admin.site._registry
 
 
-def test_serology_admin_has_igm_positive_readonly():
+def test_serology_admin_shows_both_channel_interpretations_readonly():
+    """This named the positivity booleans until slice 17 ticket 03.
+
+    The guarantee it was written for - both channels are derived, read-only, and
+    visible to whoever verifies the row - is unchanged. What moved is which
+    derived value carries it: a boolean cannot say "equivocal" and applies the
+    retired 2.0 AU/mL cutoff regardless of the reagent that produced the row.
+    """
     ma = admin.site._registry[CMVSerology]
-    assert "is_positive" in ma.readonly_fields
-    assert "igm_positive" in ma.readonly_fields
+    assert "igg_interpretation" in ma.readonly_fields
+    assert "igm_interpretation" in ma.readonly_fields
+    # The generation those readings were made against travels with them. The
+    # column is rendered by a callable, since a real field beats a same-named
+    # ModelAdmin method in lookup_field(), so the name carries a suffix.
+    assert "reagent_generation_label" in ma.list_display
 
 
 def test_recipient_admin_has_other_condition_inline_and_mismatch_readonly():
@@ -318,7 +329,9 @@ def test_lab_changelist_filters_matrix_analyte_verified():
 def test_inline_lab_rows_show_derived_flags_readonly():
     visit_ma = admin.site._registry[RecipientVisit]
     inline_ro = {i.model: i.readonly_fields for i in visit_ma.inlines}
-    assert "is_positive" in inline_ro[CMVSerology]
+    # Was "is_positive"; the inline shows the three-state IgG reading since
+    # slice 17 ticket 03. Still derived, still read-only beside the typed value.
+    assert "igg_interpretation" in inline_ro[CMVSerology]
     assert "severity_tier" in inline_ro[CMVQuantitative]
     assert "release_overdue" in inline_ro[CMVQuantitative]
     assert "eGFR" in inline_ro[RenalFunction]

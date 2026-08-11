@@ -9,7 +9,7 @@ empties become a "-" placeholder and booleans render the Yes/No/unknown icon.
 """
 import inspect
 import re
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -19,7 +19,14 @@ from django.test import Client
 from django.urls import reverse
 from django_otp.plugins.otp_totp.models import TOTPDevice
 
-from subay.registry.models import CMVSerology, Recipient, RecipientVisit
+from subay.registry.models import (
+    ClosureDay,
+    CMVQuantitative,
+    CMVSerology,
+    Donor,
+    Recipient,
+    RecipientVisit,
+)
 
 
 def _otp_client(user):
@@ -89,15 +96,25 @@ def test_recipient_add_form_shows_placeholder_not_none(admin_client):
     assert 'class="readonly">-</div>' in html  # placeholder is shown instead
 
 
-def test_recipient_add_form_boolean_renders_icon_not_false(admin_client):
-    """has_donor_serostatus_mismatch is False on a blank Recipient -> the No icon,
-    not the literal "False"."""
+def test_recipient_add_form_mismatch_reads_not_comparable_not_false(admin_client):
+    """A blank Recipient has no donor to compare against, so the flag says so.
+
+    This asserted the boolean No icon until slice 17 ticket 02. What #16/#19
+    established, that a derived value never renders as the literal "False", is
+    unchanged and still asserted below; only the rendering it was pinned to
+    moved. The icon stopped fitting for two reasons. Its polarity is inverted
+    here, since "no mismatch" is the healthy state yet draws the red cross, so a
+    clean cohort reads as a column of alarms. And the property now has a third
+    answer meaning "these were never compared", which the grey unknown icon
+    would report as a missing value rather than the deliberate statement it is.
+    """
     html = admin_client.get(reverse("admin:registry_recipient_add")).content.decode()
     assert 'class="readonly">False<' not in html  # #16/#19: no literal "False"
-    assert "icon-no.svg" in html  # the boolean No icon is rendered
+    assert "not comparable" in html
+    assert "icon-no.svg" not in html  # no red cross on a record with nothing wrong
 
 
-# --- #19: change-form derived booleans ------------------------------------
+# --- #19: change-form derived values (were booleans until slice 17) -------
 
 @pytest.fixture
 def serology(db):
@@ -108,29 +125,155 @@ def serology(db):
     v = RecipientVisit.objects.create(
         recipient=r, timepoint_label="day_7", actual_visit_date=date(2025, 1, 15)
     )
-    # value >= 2.0 -> is_positive True; igm_value unset -> igm_positive None.
+    # Drawn before the advisory, so 3.0 AU/mL is reactive on the first-generation
+    # cutoff; igm_value unset, so igm_interpretation is None (not measured).
     return CMVSerology.objects.create(
         recipient_visit=v, value=Decimal("3.0"), result_status="reported",
         drawn_date=date(2025, 1, 15),
     )
 
 
-def test_serology_change_form_true_boolean_renders_yes_icon(admin_client, serology):
+def test_serology_change_form_renders_a_measured_channel_in_words(admin_client, serology):
+    """These two tests asserted the Yes/No and unknown ICONS until slice 17
+    ticket 03, when the surfaced value became a three-state interpretation.
+
+    An icon carries two states plus a gap; the reading carries three clinical
+    answers plus "not measured". What #19 established is untouched and still
+    asserted: a derived value never reaches the page as the literal "True",
+    "False" or "None". Only the rendering it was pinned to moved.
+
+    The fixture draws on 2025-01-15, before the 2026-06-03 advisory, so 3.0 AU/mL
+    is read against the first-generation single cutoff and is reactive.
+    """
     html = admin_client.get(
         reverse("admin:registry_cmvserology_change", args=[serology.pk])
     ).content.decode()
     assert 'class="readonly">True<' not in html  # #19: no literal "True"
-    assert "icon-yes.svg" in html  # is_positive True -> Yes icon
+    assert "Reactive" in html
 
 
-def test_serology_change_form_none_boolean_renders_unknown_icon(admin_client, serology):
-    """igm_positive is None (not measured) -> the three-state unknown icon, not
-    the literal "None"."""
+def test_serology_change_form_unmeasured_channel_shows_the_placeholder(admin_client, serology):
+    """The fixture leaves igm_status at its 'missing' default, so the IgM channel
+    has no observation. That must render as the "-" placeholder, never "None"."""
     html = admin_client.get(
         reverse("admin:registry_cmvserology_change", args=[serology.pk])
     ).content.decode()
     assert 'class="readonly">None<' not in html
-    assert "icon-unknown.svg" in html
+    assert 'class="readonly">-</div>' in html
+
+
+# --- slice 17 ticket 02: the mismatch flag's three answers on the change form
+
+
+@pytest.mark.parametrize(
+    "recorded,donor_value,expected",
+    [
+        ("POS", "0.50", "MISMATCH"),       # compared, and they clash
+        ("POS", "1.50", "agree"),          # compared, and they agree
+        ("POS", "1.00", "not comparable"), # equivocal donor result
+    ],
+)
+def test_recipient_change_form_states_the_mismatch_verdict_in_words(
+    db, admin_client, recorded, donor_value, expected
+):
+    """Words rather than a colour, because the colour would be backwards.
+
+    A green tick would mean "yes, mismatch" - the problem state - and the red
+    cross would mark the healthy record. The three answers also cannot survive a
+    two-colour icon: "we could not compare these" is a statement, not a gap.
+    """
+    d = Donor.objects.create(
+        subject_id="DCMVD01", date_of_birth=date(1975, 1, 1), sex="F"
+    )
+    CMVSerology.objects.create(
+        donor=d, value=Decimal(donor_value), drawn_date=date(2026, 7, 1)
+    )
+    r = Recipient.objects.create(
+        subject_id="SCMVR02", date_of_birth=date(1980, 1, 1), sex="M",
+        kt_date=date(2026, 8, 1), donor=d, donor_serostatus=recorded,
+    )
+    html = admin_client.get(
+        reverse("admin:registry_recipient_change", args=[r.pk])
+    ).content.decode()
+    assert expected in html
+    assert 'class="readonly">None<' not in html
+    assert 'class="readonly">False<' not in html
+
+
+# --- closure_shifted states its verdict in words, for the same reason ------
+
+
+@pytest.mark.parametrize("shifted", [False, True])
+def test_visit_change_form_states_the_closure_verdict_in_words(db, admin_client, shifted):
+    """Same inverted polarity as the mismatch flag, so the same fix.
+
+    An on-time visit is the ordinary case and drew the red cross, which made a
+    healthy schedule render as a column of alarms; the shifted visit, the one
+    the protocol actually wants flagged, drew the green tick. This one is
+    strictly two-state, so the icon's third slot was never the problem - only
+    the colour, which words do not have.
+    """
+    kt = date(2025, 1, 1)
+    r = Recipient.objects.create(
+        subject_id="SCMVR03", date_of_birth=date(1980, 1, 1), sex="M", kt_date=kt,
+    )
+    nominal = kt + timedelta(days=7)
+    if shifted:
+        ClosureDay.objects.create(date=nominal, reason="annexed_holiday")
+    v = RecipientVisit.objects.create(
+        recipient=r, timepoint_label="day_7", actual_visit_date=nominal,
+    )
+    assert v.closure_shifted is shifted  # the fixture really does set up both cases
+
+    html = admin_client.get(
+        reverse("admin:registry_recipientvisit_change", args=[v.pk])
+    ).content.decode()
+    assert ("SHIFTED" if shifted else "no shift") in html
+    assert 'class="readonly">True<' not in html
+    assert 'class="readonly">False<' not in html
+    if not shifted:
+        assert "icon-no.svg" not in html  # no red cross on a visit that ran on time
+
+
+# --- the safety release flag reads forwards too ----------------------------
+
+
+@pytest.mark.parametrize(
+    "value,tier,expected",
+    [
+        (Decimal("50000"), "disease", "OVERDUE"),          # needed a release, none logged
+        (Decimal("10"), "asymptomatic", "not required"),
+    ],
+)
+def test_quantitative_change_form_states_the_release_verdict_in_words(
+    db, admin_client, value, tier, expected
+):
+    """Third flag with the same inverted polarity, and the one an operator met
+    most often: it renders in the quantitative inline of every visit page, so a
+    visit whose results all went out on time showed a row of red crosses.
+
+    The false answer also covered two unlike situations - released inside the
+    window, and never needing a release - which a two-colour icon cannot
+    separate. Both now say which one they are.
+    """
+    r = Recipient.objects.create(
+        subject_id="SCMVR04", date_of_birth=date(1980, 1, 1), sex="M",
+        kt_date=date(2025, 1, 1),
+    )
+    v = RecipientVisit.objects.create(
+        recipient=r, timepoint_label="day_7", actual_visit_date=date(2025, 1, 8)
+    )
+    q = CMVQuantitative.objects.create(
+        recipient_visit=v, value=value, drawn_date=date(2025, 1, 8), severity_tier=tier,
+    )
+    html = admin_client.get(
+        reverse("admin:registry_cmvquantitative_change", args=[q.pk])
+    ).content.decode()
+    assert expected in html
+    assert 'class="readonly">True<' not in html
+    assert 'class="readonly">False<' not in html
+    if expected != "OVERDUE":
+        assert "icon-no.svg" not in html  # no red cross on a result with nothing wrong
 
 
 # --- #18: page <title> is never blank -------------------------------------

@@ -4,6 +4,7 @@ from decimal import Decimal
 import pytest
 
 from subay.registry.episodes import Episode
+from subay.registry.serology_ranges import NON_REACTIVE, REACTIVE
 from subay.registry.models import (
     CMVQuantitative,
     CMVSerology,
@@ -112,7 +113,11 @@ def test_pre_kt_igg_serostatus_equals_the_igg_derivation_one_canonical_value():
     s = CMVSerology.objects.create(
         recipient_visit=v, value=Decimal("5.0"), drawn_date=date(2025, 1, 1)
     )
-    derived = "POS" if s.is_positive else "NEG"
+    # Was `"POS" if s.is_positive else "NEG"`. The boolean retired in slice 17,
+    # but the point of the test did not: the serostatus must still be the SAME
+    # canonical reading of the IgG result, not a second derivation beside it.
+    derived = {REACTIVE: "POS", NON_REACTIVE: "NEG"}.get(s.igg_interpretation)
+    assert derived == "POS"  # 5.0 AU/mL is reactive on either generation
     assert r.pre_kt_igg_serostatus == derived
 
 

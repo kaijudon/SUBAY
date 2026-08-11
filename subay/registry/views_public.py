@@ -4,16 +4,25 @@ These are the only two views in SUBAY that serve an unauthenticated request, so
 they carry one extra rule on top of the usual ones:
 
     **Nothing rendered here may be traceable to a subject.** No subject ID, no
-    date, no per-recipient row - only study-level aggregates. The de-identification
-    chokepoint guards the export; this module guards the front door.
+    date drawn from a subject's record, no per-recipient row - only study-level
+    aggregates. The de-identification chokepoint guards the export; this module
+    guards the front door.
+
+    "Date drawn from a subject's record" is the whole of the rule. The assay
+    advisory date below is a published fact about the laboratory's reagent, in
+    the same class as the QNAT limit of detection, and it says nothing about any
+    subject - which is why the leak test checks kt_date and date_of_birth
+    renderings rather than banning every date-shaped string.
 
 Everything factual on both pages is read from the registry's own constants and
 querysets rather than retyped as prose (`TIMEPOINT_OFFSETS`, `VISIT_SHIFT_CAP_DAYS`,
-`CMVQuantitative.LOD`, `CMVSerology.POSITIVE_THRESHOLD`, `safety.RELEASE_*`). A
+`CMVQuantitative.LOD`, `serology_ranges.bands_for`, `safety.RELEASE_*`). A
 threshold quoted on a public page that disagrees with the threshold the software
 enforces is worse than no page at all, and deriving it is the only way the two
 cannot drift.
 """
+import datetime
+
 from django.shortcuts import render
 from django.urls import reverse
 
@@ -25,6 +34,7 @@ from .models import (
     VISIT_SHIFT_CAP_DAYS,
 )
 from .scheduling import TIMEPOINT_OFFSETS
+from .serology_ranges import ADVISORY_EFFECTIVE, GEN2, bands_for, generation_for
 
 # The protocol's enrolment target and follow-up horizon. Not derivable from any
 # stored row - the target is a fact about the study, not about the data - so it
@@ -190,8 +200,68 @@ def _stratum_counts():
     ]
 
 
+def _long_date(day):
+    """"3 June 2026". Long form because this renders inside a sentence, and
+    spelled out here rather than via strftime("%-d") which is glibc-only."""
+    return f"{day.day} {day.strftime('%B')} {day.year}"
+
+
+def _grayzone_phrase(channel, equivocal_from, reactive_from):
+    """One channel's grayzone as prose, or an honest statement that it has none.
+
+    serology_ranges expresses a single-cutoff generation as a band whose two
+    edges COINCIDE, so that one comparison serves both generations with no
+    separate legacy path. That representation must not reach a reader as prose:
+    interpolating it yields "2.00 to under 2.00", which states that a grayzone
+    exists and is empty. No laboratory said that. The page has to translate the
+    encoding rather than fill it into a sentence written for one generation.
+    """
+    if equivocal_from >= reactive_from:
+        return f"{channel} is a single cutoff with no grayzone"
+    return f"{channel} has a grayzone of {equivocal_from} to under {reactive_from}"
+
+
+def _in_force_sentence(generation):
+    """Which reagent the published numbers belong to, and from when.
+
+    Without it the page states cutoffs with no period attached, so a reader
+    holding a result drawn under the earlier reagent has no way to tell that
+    these values were never applied to it. DEC-030 freezes those rows at their
+    original reading, and that freeze is only legible if the boundary is named.
+    """
+    when = _long_date(ADVISORY_EFFECTIVE)
+    if generation == GEN2:
+        return (
+            f" These are the second-generation reagent ranges, in force since {when}. "
+            "A sample drawn before that date was read against the single "
+            "first-generation cutoff that applied then, and is never re-interpreted "
+            "against these values."
+        )
+    return (
+        f" These are the first-generation reagent ranges, in force until the "
+        f"laboratory's second-generation reagent takes effect on {when}."
+    )
+
+
 def _assays():
     """Assay cutoffs, each read from the constant that enforces it."""
+    generation = generation_for(datetime.date.today())
+    bands = bands_for(generation)
+    igg_equivocal, igg_reactive = bands["igg"]
+    igm_equivocal, igm_reactive = bands["igm"]
+    grayzones = (
+        f"{_grayzone_phrase('IgG', igg_equivocal, igg_reactive)}, and "
+        f"{_grayzone_phrase('IgM', igm_equivocal, igm_reactive)}"
+    )
+    # The equivocal rule is stated only when there is a band for a result to land
+    # in. Under a single-cutoff generation it would describe a state no result
+    # can reach.
+    equivocal_rule = (
+        " A result inside one is recorded as equivocal, never rounded into a "
+        "serostatus the laboratory did not give."
+        if igg_equivocal < igg_reactive or igm_equivocal < igm_reactive
+        else ""
+    )
     return [
         {
             "name": "CMV quantitative (QNAT)",
@@ -202,21 +272,19 @@ def _assays():
             "series stays honest about what the assay could see.",
         },
         {
-            # No cutoff is published here on purpose. The SPMC Transplant
-            # Immunology Unit advisory of 2026-06-03 superseded the single 2.0
-            # AU/mL threshold this model still applies (DEC-016), and the model
-            # has not been updated yet - see DEC-029 and prd/issues/17. The page
-            # derives its figures from the model's constants so the two can never
-            # disagree; that same guarantee means it must publish nothing rather
-            # than publish a cutoff now known to be stale.
+            # The generation comes from today's date, not a hardcoded GEN2. The
+            # page publishes the ranges IN FORCE, and the only way it stays that
+            # way across the next advisory is to ask the same function the
+            # interpreter asks. Rows drawn under the earlier reagent are still
+            # read against the earlier bands (DEC-030), but a public summary of
+            # what the lab runs today is not the place to publish both.
             "name": "CMV serology",
-            "cutoff": "under revision",
-            "body": "IgG and IgM channels. The donor's baseline draw derives the pair's "
-            "serostatus, which is cross-checked against the status recorded at "
-            "transplant and flagged - never overwritten - when the two disagree. "
-            "The reference ranges are being updated to the laboratory's "
-            "second-generation assay; ask the data manager for the values in "
-            "force for a given draw.",
+            "cutoff": f"IgG ≥ {igg_reactive} · IgM ≥ {igm_reactive} AU/mL",
+            "body": "IgG and IgM channels, reactive at or above those values. "
+            f"{grayzones}.{equivocal_rule}{_in_force_sentence(generation)} The "
+            "donor's baseline draw derives the pair's serostatus, which is "
+            "cross-checked against the status recorded at transplant and flagged "
+            "- never overwritten - when the two disagree.",
         },
         {
             "name": "Release timeliness",

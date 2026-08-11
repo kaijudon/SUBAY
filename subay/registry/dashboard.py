@@ -177,6 +177,29 @@ def release_overdue_count():
     )
 
 
+def awaiting_repeat_count():
+    """T5 - count of recipient draws whose grayzone result is still unresolved.
+
+    Reads the same `awaiting_repeat()` standing queryset the worklist iterates,
+    for the same reason T3 reads `overdue_release_flags()`: the equivocal test is
+    a band comparison owned by serology_ranges.py, and a count computed any other
+    way here would be a second implementation of it, free to drift from the rows
+    the clinician is looking at.
+    """
+    from django.apps import apps
+    from django.urls import reverse
+
+    model = apps.get_model("registry", "cmvserology")
+    return CountTile(
+        key="awaiting_repeat",
+        title="Draws awaiting a repeat",
+        icon="ico-alarm",
+        count=len(model.objects.awaiting_repeat()),
+        link=reverse("admin:serology_repeat_worklist"),
+        link_label="Open repeat-draw worklist",
+    )
+
+
 def visits_due(today=None):
     """T1 - synthesize the six-timepoint schedule per still-enrolled recipient,
     closure-shift each nominal day, and surface only the expected timepoints that

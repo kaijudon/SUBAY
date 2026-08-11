@@ -6,6 +6,8 @@ anonymous request would be a disclosure the export chokepoint never sees, so
 those get explicit assertions rather than being inferred from "the page rendered".
 """
 import datetime
+from decimal import Decimal
+from unittest import mock
 
 import pytest
 from django.core.exceptions import ValidationError
@@ -17,12 +19,12 @@ from subay.registry.validators import subject_id_validator
 from subay.registry import safety
 from subay.registry.models import (
     CMVQuantitative,
-    CMVSerology,
     Recipient,
     RecipientVisit,
     VISIT_SHIFT_CAP_DAYS,
 )
 from subay.registry.scheduling import TIMEPOINT_OFFSETS
+from subay.registry.serology_ranges import GEN1, GEN2, bands_for
 from subay.registry.views_public import TARGET_RECIPIENTS
 
 
@@ -156,18 +158,59 @@ def test_protocol_quotes_the_real_assay_constants(client):
 
 
 @pytest.mark.django_db
-def test_protocol_publishes_no_serology_cutoff_while_the_ranges_are_stale(client):
-    """The SPMC advisory of 2026-06-03 superseded CMVSerology.POSITIVE_THRESHOLD
-    and the model has not caught up (DEC-029, prd/issues/17). Until it does, the
-    page must publish no serology cutoff at all - a stale clinical threshold on
-    an unauthenticated page is the one figure here a clinician might act on.
+def test_protocol_publishes_the_serology_ranges_in_force(client):
+    """The converted tripwire (slice 17, ticket 05).
 
-    This test is the tripwire for slice 17: adopting the new ranges should make
-    it fail, at which point it is replaced by an assertion on the new constants.
+    This test used to assert the page published NO serology cutoff, because the
+    2026-06-03 advisory had superseded the single threshold the model still
+    applied and a stale clinical figure on an unauthenticated page is the one
+    number here a clinician might act on. The ranges are adopted now, so the
+    reason expired and the assertion is inverted rather than dropped: the page
+    must quote what the software enforces, and the figures must come from the
+    same map `interpret_igg`/`interpret_igm` read.
     """
     body = client.get(reverse("public:protocol")).content.decode()
-    assert "under revision" in body
-    assert f"{CMVSerology.POSITIVE_THRESHOLD} AU/mL" not in body
+    assert "under revision" not in body
+
+    igg_equivocal, igg_reactive = bands_for(GEN2)["igg"]
+    igm_equivocal, igm_reactive = bands_for(GEN2)["igm"]
+    for figure in (igg_equivocal, igg_reactive, igm_equivocal, igm_reactive):
+        assert str(figure) in body
+
+
+@pytest.mark.django_db
+def test_protocol_reads_its_serology_figures_from_the_band_map(client):
+    """Not merely "the numbers appear" - they appear BECAUSE the view read the
+    interpreter's own map. Patching the map moves the page; a number retyped
+    into the view or the template would not move with it."""
+    shifted = {"igg": (Decimal("9.11"), Decimal("9.22")),
+               "igm": (Decimal("9.33"), Decimal("9.44"))}
+    with mock.patch("subay.registry.views_public.bands_for", return_value=shifted):
+        body = client.get(reverse("public:protocol")).content.decode()
+    for figure in ("9.11", "9.22", "9.33", "9.44"):
+        assert figure in body
+
+
+@pytest.mark.django_db
+def test_protocol_presents_the_grayzone_as_a_band_not_a_point(client):
+    """An equivocal range collapsed to a single number is a different clinical
+    claim. Both edges must be on the page, and the upper one must read as
+    exclusive - a value AT the reactive threshold is reactive, not equivocal."""
+    body = client.get(reverse("public:protocol")).content.decode()
+    igg_equivocal, igg_reactive = bands_for(GEN2)["igg"]
+    assert f"{igg_equivocal} to under {igg_reactive}" in body
+    igm_equivocal, igm_reactive = bands_for(GEN2)["igm"]
+    assert f"{igm_equivocal} to under {igm_reactive}" in body
+
+
+@pytest.mark.django_db
+def test_protocol_publishes_only_the_generation_in_force(client):
+    """The register holds both interpretations at once (DEC-030), but a public
+    summary of what the laboratory runs today is not the place to publish both.
+    A reader must not have to work out which set applies to them."""
+    body = client.get(reverse("public:protocol")).content.decode()
+    for label in ("1st generation", "2nd generation", "gen1", "gen2"):
+        assert label not in body
 
 
 @pytest.mark.django_db
@@ -229,3 +272,52 @@ def test_login_offers_a_way_back_to_the_landing_page(client):
     """
     body = client.get(reverse("admin:login")).content.decode()
     assert f'href="{reverse("public:landing")}"' in body
+
+
+@pytest.mark.django_db
+def test_protocol_does_not_publish_a_zero_width_grayzone(client):
+    """Under a single-cutoff generation the band's two edges coincide, and the
+    page must not render that as a grayzone.
+
+    serology_ranges keeps GEN1 as a band whose edges are equal so one comparison
+    covers both generations. Interpolated into a sentence written for GEN2 it
+    reads "2.00 to under 2.00" - an equivocal range that exists and is empty,
+    stated to an anonymous reader as clinical fact. The encoding is right; what
+    it must not do is reach prose untranslated.
+    """
+    with mock.patch("subay.registry.views_public.generation_for", return_value=GEN1):
+        body = client.get(reverse("public:protocol")).content.decode()
+
+    igg_equivocal, igg_reactive = bands_for(GEN1)["igg"]
+    assert igg_equivocal == igg_reactive  # the premise, asserted not assumed
+    assert f"{igg_equivocal} to under {igg_reactive}" not in body
+    assert "single cutoff with no grayzone" in body
+    # And the rule about landing inside one goes with it - nothing can.
+    assert "recorded as equivocal" not in body
+
+
+@pytest.mark.django_db
+def test_protocol_says_which_reagent_the_published_ranges_belong_to(client):
+    """Cutoffs with no period attached leave a reader holding an older result
+    unable to tell these values were never applied to it.
+
+    DEC-030 freezes a pre-advisory row at its original reading, and that freeze
+    is only legible to someone outside the study if the page names the boundary.
+    """
+    body = client.get(reverse("public:protocol")).content.decode()
+    assert "3 June 2026" in body
+    assert "in force since" in body
+    assert "never re-interpreted" in body
+
+
+@pytest.mark.django_db
+def test_protocol_grayzone_wording_follows_the_generation_in_force(client):
+    """The two branches are not independently worded pages: whichever generation
+    is in force, the sentence has to describe the bands that generation actually
+    has."""
+    with mock.patch("subay.registry.views_public.generation_for", return_value=GEN2):
+        body = client.get(reverse("public:protocol")).content.decode()
+    igg_equivocal, igg_reactive = bands_for(GEN2)["igg"]
+    assert f"{igg_equivocal} to under {igg_reactive}" in body
+    assert "single cutoff with no grayzone" not in body
+    assert "recorded as equivocal" in body

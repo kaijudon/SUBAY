@@ -1,0 +1,58 @@
+name: Tests
+
+# The suite is the project's stated definition of end-to-end (CLAUDE.md, "Teaching
+# system"): model constraints, the derivers, the export chokepoint's
+# de-identification contract, and admin wiring. Until this file existed it ran
+# only on the one workstation it was written on, so "CI green" on this repo meant
+# "no agent attribution" and nothing more. A suite that never runs anywhere else
+# is a suite that rots quietly: a dependency floats, an import lands that only
+# resolves against one machine's site-packages, and nothing says so until a fresh
+# clone on the deploy box fails at the worst moment.
+#
+# Zero setup is deliberate and worth preserving. settings.py defaults
+# DATABASE_URL to sqlite and DJANGO_SECRET_KEY to a dev value, and .env is
+# gitignored, so this job needs no secrets, no service container, and no
+# credentials. If a future change makes the suite need any of those, prefer
+# fixing the test path over adding them here.
+#
+# What this job structurally CANNOT cover, per the same CLAUDE.md section: the
+# Postgres-only paths (pgcrypto columns, any view or window-function path),
+# browser rendering of the admin, and deployment. Those stay HITL. Green here is
+# not clearance to skip the Slice 15 checks.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  # master too, not only the PR. A merge commit can differ from the head GitHub
+  # tested, and a commit pushed straight to master is never a PR at all, so the
+  # PR trigger alone leaves the branch we deploy from as the one branch nothing
+  # checks.
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # Pinned to environment.yml's interpreter. CI passing on a version the
+          # deploy box does not run would be a false green.
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        # requirements.txt only. requirements-dev.txt is the sandbox Playwright
+        # tooling (DEC-025) and is not part of the pytest suite.
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run the suite
+        run: python -m pytest -q

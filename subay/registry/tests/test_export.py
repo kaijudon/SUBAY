@@ -43,6 +43,10 @@ from subay.registry.management.commands.export_analysis_set import (
     MRN_RX,
     NAME_RX,
 )
+from subay.registry.serology_ranges import (
+    ADVISORY_EFFECTIVE,
+    GEN2_IGG_EQUIVOCAL_FROM_AU_ML,
+)
 
 
 @pytest.fixture
@@ -245,6 +249,64 @@ def test_export_distinguishes_no_from_not_asked(seeded_baseline, tmp_path):
     assert row["has_diabetes"] == "false"
     assert row["has_hypertension"] == ""
     assert row["has_diabetes"] != row["has_hypertension"]
+
+
+def test_export_keeps_the_mismatch_flags_third_state_separable(seeded_baseline, tmp_path):
+    """Slice 17 ticket 02 gave has_donor_serostatus_mismatch a third answer, and
+    nothing in the export pinned what that answer becomes in the file.
+
+    The column previously wrote "false" for a pair it could not compare, which
+    asserted the two sides were checked and agreed. It now names the third state
+    outright. Those are different claims and an analyst counting comparable pairs
+    depends on the difference, so all three cells are asserted together here
+    rather than one at a time: what matters is that no two of them collide.
+
+    Blank is asserted against, not merely differed from. Every other unknown in
+    this snapshot is blank, and the manifest publishes column TYPES and no value
+    domain, so a blank here would be indistinguishable from a question nobody
+    asked to anyone reading the file without the source in front of them. The
+    cell is the only place the distinction can live.
+
+    The equivocal-donor case is the one ticket 02 added and the one a donor can
+    never resolve, since a donor gets at most one baseline draw.
+    """
+    equivocal_donor = Donor.objects.create(
+        subject_id="DCMVD02", date_of_birth=date(1976, 1, 1), sex="M", donor_type="living"
+    )
+    CMVSerology.objects.create(
+        donor=equivocal_donor,
+        value=GEN2_IGG_EQUIVOCAL_FROM_AU_ML,  # grayzone -> no baseline serostatus
+        drawn_date=ADVISORY_EFFECTIVE,
+    )
+    Recipient.objects.create(
+        subject_id="SCMVR08", date_of_birth=date(1981, 1, 1), sex="F",
+        kt_date=date(2025, 2, 1), donor=equivocal_donor, donor_serostatus="POS",
+    )
+    agreeing_donor = Donor.objects.create(
+        subject_id="DCMVD03", date_of_birth=date(1977, 1, 1), sex="F", donor_type="living"
+    )
+    CMVSerology.objects.create(
+        donor=agreeing_donor, value=Decimal("1.0"), drawn_date=date(2024, 12, 1)  # NEG
+    )
+    Recipient.objects.create(
+        subject_id="SCMVR09", date_of_birth=date(1982, 1, 1), sex="M",
+        kt_date=date(2025, 3, 1), donor=agreeing_donor, donor_serostatus="NEG",
+    )
+
+    call_command("export_analysis_set", "v0.1", outdir=str(tmp_path))
+    with (tmp_path / "v0.1" / "recipient.csv").open(newline="") as fh:
+        reader = csv.DictReader(fh)
+        rows = {r["subject_id"]: r for r in reader}
+    flags = {sid: r["has_donor_serostatus_mismatch"] for sid, r in rows.items()}
+
+    mismatch, not_comparable, agreed = flags["SCMVR07"], flags["SCMVR08"], flags["SCMVR09"]
+    assert mismatch == "true"
+    assert agreed == "false"
+    assert not_comparable == "not_comparable"
+    assert len({mismatch, not_comparable, agreed}) == 3
+    # And not the blank an unasked question uses two columns to the left.
+    assert rows["SCMVR07"]["has_hypertension"] == ""
+    assert "" not in {mismatch, not_comparable, agreed}
 
 
 def test_export_materializes_baseline_and_derived(seeded_baseline, tmp_path):
@@ -489,7 +551,10 @@ def test_export_serology_has_materialized_igm_columns(seeded_slice05, tmp_path):
         row = list(csv.DictReader(fh))[0]
     assert row["igm_value"] == "1.00"
     assert row["igm_status"] == "reported"
-    assert row["igm_positive"] == "False"  # materialized derived value, 1.0 < 2.0
+    # Was igm_positive=False. The materialized derived value is now the
+    # three-state reading (slice 17): 1.0 AU/mL under 1st-generation reagent,
+    # whose only boundary is 2.00, is non-reactive.
+    assert row["igm_interpretation"] == "non_reactive"
 
 
 def test_export_materializes_pre_kt_igg_serostatus(seeded_slice05, tmp_path):

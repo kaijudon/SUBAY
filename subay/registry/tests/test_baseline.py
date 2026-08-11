@@ -155,9 +155,41 @@ def test_mismatch_flag_false_when_agree():
 
 
 @pytest.mark.django_db
-def test_mismatch_flag_false_when_either_missing():
+def test_mismatch_flag_not_comparable_when_either_side_missing():
+    """This asserted False on both counts until slice 17 ticket 02.
+
+    False is a claim: the two sides were compared and they agreed. Neither case
+    below was ever compared at all, so answering False told a reviewer that the
+    weakest possible evidence was a clean all-clear. The property now has a third
+    answer for it. AC6's real guarantee, that a genuine clash is surfaced and
+    never overwritten, is untouched and still asserted above.
+    """
     r_no_donor = _recipient(subject_id="SCMVR07", donor_serostatus="POS")
-    assert r_no_donor.has_donor_serostatus_mismatch is False
-    d = _donor()  # no serology
+    assert r_no_donor.has_donor_serostatus_mismatch is None
+    d = _donor()  # paired, but no serology to compare against
     r = _recipient(subject_id="SCMVR08", donor=d, donor_serostatus="POS")
-    assert r.has_donor_serostatus_mismatch is False
+    assert r.has_donor_serostatus_mismatch is None
+    # Distinct from the agreeing case, which still answers False.
+    d2 = _donor(subject_id="SCMVD09")
+    CMVSerology.objects.create(donor=d2, value=Decimal("3.0"), drawn_date=date(2024, 12, 1))
+    r2 = _recipient(subject_id="SCMVR09", donor=d2, donor_serostatus="POS")
+    assert r2.has_donor_serostatus_mismatch is False
+
+
+@pytest.mark.django_db
+def test_mismatch_flag_not_comparable_when_donor_serology_is_equivocal():
+    """An equivocal donor result yields no baseline serostatus, so there is
+    nothing to compare the recorded value against.
+
+    A donor has at most one baseline serology, so this is terminal: no repeat
+    draw can resolve it. Before the third answer existed this presented as a
+    clean agreement, which is the specific failure the equivocal band makes
+    common rather than rare.
+    """
+    d = _donor(subject_id="SCMVD10")
+    CMVSerology.objects.create(
+        donor=d, value=Decimal("1.00"), drawn_date=date(2026, 7, 1)  # gen2 IgG equivocal
+    )
+    r = _recipient(subject_id="SCMVR10", donor=d, donor_serostatus="POS")
+    assert d.baseline_serostatus is None
+    assert r.has_donor_serostatus_mismatch is None

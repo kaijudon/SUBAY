@@ -50,6 +50,10 @@ skills-lock.json
 Slice[0-9]*.md
 docs/agents/
 
+# Ticket breakdowns produced by /to-tickets. They cite the issue cards and the
+# decisions journal, both of which are already local-only, so they follow.
+.scratch/
+
 # Study specs and reference material (source-of-truth lives outside the code repo).
 prd/
 reference/

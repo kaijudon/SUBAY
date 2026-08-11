@@ -81,6 +81,12 @@ class SubayAdminSite(OTPAdminSite):
         # T4 - CONSORT recipient counts (study-progress). Gate: view recipient.
         if request.user.has_perm("registry.view_recipient"):
             tiles.append(dashboard.consort_counts())
+        # T5 - grayzone draws awaiting a repeat. Gate: change on serology, the
+        # permission that lets a user actually record the repeat. A view-only
+        # analyst can read a result but cannot discharge one of these, so the
+        # tile would be a to-do list they have no way to work.
+        if request.user.has_perm("registry.change_cmvserology"):
+            tiles.append(dashboard.awaiting_repeat_count())
         return tiles
 
     def index(self, request, extra_context=None):
@@ -137,6 +143,11 @@ class SubayAdminSite(OTPAdminSite):
                 self.admin_view(self.safety_worklist_view),
                 name="safety_worklist",
             ),
+            path(
+                "serology-repeat-worklist/",
+                self.admin_view(self.serology_repeat_worklist_view),
+                name="serology_repeat_worklist",
+            ),
         ]
         # custom URLs first so the named route resolves before any catch-all.
         return custom + urls
@@ -181,6 +192,53 @@ class SubayAdminSite(OTPAdminSite):
         }
         return TemplateResponse(
             request, "admin/registry/safety_worklist.html", context
+        )
+
+    def serology_repeat_worklist_view(self, request):
+        """The standing repeat-draw surface: recipient serologies whose IgG or IgM
+        landed in the grayzone and which nothing has been drawn to resolve yet.
+
+        The PI ruled an equivocal result is a direction to draw again, which makes
+        the grayzone a schedulable action rather than only a derived label. Reads
+        the same `awaiting_repeat()` queryset the T5 tile counts, so tile and
+        worklist cannot disagree. admin_view() enforced login + staff + TOTP; this
+        adds change-on-serology, the permission that lets a user record the repeat
+        that discharges a row.
+        """
+        from django.apps import apps
+        from django.core.exceptions import PermissionDenied
+        from django.template.response import TemplateResponse
+
+        if not request.user.has_perm("registry.change_cmvserology"):
+            raise PermissionDenied
+
+        model = apps.get_model("registry", "cmvserology")
+        serology_add = reverse("admin:registry_cmvserology_add")
+        rows = []
+        for s in model.objects.awaiting_repeat():
+            rows.append({
+                "label": str(s),
+                "recipient": s.recipient_visit.recipient,
+                "timepoint_label": s.recipient_visit.timepoint_label,
+                "drawn_date": s.drawn_date,
+                "igg_interpretation": s.igg_interpretation,
+                "igm_interpretation": s.igm_interpretation,
+                "change_url": reverse("admin:registry_cmvserology_change", args=[s.pk]),
+                # Deep-link the add form with the back-pointer prefilled, so
+                # recording the repeat is one click and the pair is linked by
+                # construction rather than by the operator remembering to link it.
+                "repeat_url": f"{serology_add}?repeats={s.pk}"
+                              f"&recipient_visit={s.recipient_visit_id}",
+            })
+
+        context = {
+            **self.each_context(request),
+            "title": "Repeat-draw worklist",
+            "rows": rows,
+            "total": len(rows),
+        }
+        return TemplateResponse(
+            request, "admin/registry/serology_repeat_worklist.html", context
         )
 
     def verification_worklist_view(self, request):

@@ -2,8 +2,8 @@
 
 The abstract BaseSubject shares identity columns into concrete Recipient/Donor
 without emitting its own table. Derived clinical values (age, risk_stratum,
-is_positive) are @property and never stored, so a stored fact and its computed
-value can never silently disagree.
+igg_interpretation) are @property and never stored, so a stored fact and its
+computed value can never silently disagree.
 """
 from datetime import date, timedelta
 from decimal import Decimal
@@ -35,6 +35,15 @@ from .resistance import (
 from . import safety
 from .safety import RELEASE_THRESHOLD_IU_ML, SYMPTOMATIC_TIERS
 from .scheduling import TIMEPOINT_OFFSETS, ClosureDayLike, first_operating_day
+from .serology_ranges import (
+    EQUIVOCAL,
+    REAGENT_GENERATION_CHOICES,
+    VALID_GENERATIONS,
+    generation_for,
+    interpret_igg,
+    interpret_igm,
+    serostatus_from,
+)
 from .validators import subject_id_validator
 
 SEX_CHOICES = [("M", "Male"), ("F", "Female")]
@@ -337,29 +346,40 @@ class Recipient(BaseSubject):
 
     @property
     def pre_kt_igg_serostatus(self):
-        """R+/R- computed ONCE from the pre_kt visit's IgG serology (single
-        2.0 AU/mL cutoff). The canonical pre-KT serostatus both Obj 4a
-        stratification and Obj 5 attribution consume — derived, never stored, so
-        the two objectives can never read disagreeing values. None when there is
-        no pre_kt visit or its IgG result is missing."""
+        """R+/R- computed ONCE from the pre_kt visit's IgG serology, read against
+        the reagent generation that produced it. The canonical pre-KT serostatus
+        both Obj 4a stratification and Obj 5 attribution consume — derived, never
+        stored, so the two objectives can never read disagreeing values.
+
+        None when there is no pre_kt visit, when its IgG result is missing, or
+        when the reading is EQUIVOCAL. The grayzone is not a third category: an
+        equivocal recipient is undetermined until a repeat draw resolves it, and
+        is treated exactly as an absent draw is."""
         visit = self.visits.filter(timepoint_label="pre_kt").first()
         if visit is None:
             return None
         s = visit.serologies.first()
-        if s is None or s.is_positive is None:
+        if s is None:
             return None
-        return "POS" if s.is_positive else "NEG"
+        return serostatus_from(s.igg_interpretation)
 
     @property
     def has_donor_serostatus_mismatch(self):
         """Flag (never overwrite) a clash between the recorded donor serostatus
         and the paired donor's own serology. Surfaces for hand reconciliation;
-        both stored facts stay intact. False when either side is missing."""
+        both stored facts stay intact.
+
+        Three answers, not two. None means NOT COMPARABLE — no paired donor, no
+        recorded serostatus, or a donor serology that yielded no baseline (absent
+        or equivocal). It is deliberately distinct from False, which asserts that
+        the two sides WERE compared and agreed. Collapsing the two would present
+        the weakest possible donor evidence to a reviewer as a clean all-clear,
+        which the equivocal band makes a common case rather than a rare one."""
         if self.donor_id is None:
-            return False
+            return None
         donor_status = self.donor.baseline_serostatus
         if not self.donor_serostatus or not donor_status:
-            return False
+            return None
         return self.donor_serostatus != donor_status
 
     def _reported_qnat_points(self):
@@ -445,12 +465,18 @@ class Donor(BaseSubject):
 
     @property
     def baseline_serostatus(self):
-        """POS/NEG from the donor's single serology (2.0 AU/mL threshold), else
-        None. Derived — never stored, so it can't disagree with the lab value."""
+        """POS/NEG from the donor's single serology, read against the reagent
+        generation that produced it. Derived — never stored, so it can't disagree
+        with the lab value.
+
+        None when there is no draw, when the result is missing, or when the
+        reading is EQUIVOCAL. A donor has at most one baseline serology, so an
+        equivocal donor result is terminal: there is no second row to resolve it
+        and the donor simply has no established baseline serostatus."""
         s = self.serologies.first()
-        if s is None or s.is_positive is None:
+        if s is None:
             return None
-        return "POS" if s.is_positive else "NEG"
+        return serostatus_from(s.igg_interpretation)
 
 
 class ClosureDay(models.Model):
@@ -582,15 +608,45 @@ class ExactlyOneParentMixin(models.Model):
             raise ValidationError("A missing observation must not carry a value.")
 
 
+class CMVSerologyQuerySet(models.QuerySet):
+    def awaiting_repeat(self):
+        """The standing query behind both the repeat-draw worklist and its tile.
+
+        Materialized to a list rather than left lazy, mirroring
+        `CMVQuantitativeQuerySet.overdue_release_flags()`: the equivocal test is a
+        band comparison against the row's own reagent generation, which lives in
+        Python and cannot be pushed into SQL without duplicating the bands as a
+        second source of truth. Returning the list means the tile's len() and the
+        worklist's rows are the same objects, so they cannot report different
+        totals.
+
+        Donor-attached draws are excluded at the queryset, not filtered out later.
+        A donor holds at most one serology by DB constraint and is frequently
+        deceased, so an equivocal donor result is terminal rather than pending; it
+        would sit in the worklist forever with no action able to discharge it.
+        """
+        qs = (
+            self.filter(recipient_visit__isnull=False)
+            .select_related("recipient_visit__recipient")
+            .prefetch_related("repeated_by")
+            .order_by("pk")
+        )
+        return [s for s in qs if s.awaiting_repeat]
+
+
 class CMVSerology(ExactlyOneParentMixin, VerificationMixin):
     """One lab result attached to EXACTLY ONE parent: a recipient visit OR a donor.
 
     Enforced twice: clean() for a friendly admin error, a DB CheckConstraint for an
-    unbreakable guarantee on every write path. value is Snibe Maglumi 600 AU/mL;
-    is_positive is derived at the 2.0 AU/mL binary threshold.
-    """
+    unbreakable guarantee on every write path. value is Snibe Maglumi 600 AU/mL,
+    read against the bands its reagent generation implies (serology_ranges).
 
-    POSITIVE_THRESHOLD = Decimal("2.0")
+    There is no single positivity threshold on this model. One shared 2.0 AU/mL
+    cutoff was retired in slice 17: it cannot answer both channels once they
+    diverge, and it has no way to say "equivocal". The first-generation edge
+    survives as GEN1_REACTIVE_FROM_AU_ML, since frozen rows are still read
+    against it.
+    """
 
     recipient_visit = models.ForeignKey(
         RecipientVisit,
@@ -634,6 +690,32 @@ class CMVSerology(ExactlyOneParentMixin, VerificationMixin):
         help_text="IgM channel. Defaults 'missing' — an IgG-only draw has no IgM observation.",
     )
     drawn_date = models.DateField()
+    reagent_generation = models.CharField(
+        max_length=4,
+        choices=REAGENT_GENERATION_CHOICES,
+        blank=True,
+        help_text="Assay reagent generation that produced this result. Leave blank "
+        "to default from the draw date (2nd gen from 2026-06-03). Set it by hand "
+        "only for a late-entered sample that was run on 1st-generation reagent.",
+    )
+    repeats = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="repeated_by",
+        help_text="The earlier equivocal draw this result repeats. Leave blank for "
+        "an ordinary draw. Setting it is what discharges that draw from the "
+        "repeat-draw worklist.",
+    )
+    # A repeat is a SECOND ROW pointing back at the first, not a second value
+    # column on the first. The repeat is a real draw: it has its own draw date, its
+    # own reagent generation, its own IgG and IgM channels and its own four-eyes
+    # verification, and every one of those can differ from the draw it repeats. A
+    # pair of value columns on one row could carry none of that, and would cap the
+    # story at two draws when a repeat that is itself equivocal has to be
+    # repeatable in turn.
+    objects = CMVSerologyQuerySet.as_manager()
     history = HistoricalRecords()
 
     class Meta:
@@ -654,22 +736,154 @@ class CMVSerology(ExactlyOneParentMixin, VerificationMixin):
             _status_matches_value_constraint(
                 "cmvserology_igm_value_matches_status", "igm_value", "igm_status"
             ),
+            # The stored generation KEYS the band maps, so an unrecognized code
+            # is not a cosmetic data-quality problem: every interpretation on the
+            # row stops answering, taking the serology changelist, both derived
+            # serostatuses and the export down with it. `choices` is form-level
+            # and says nothing about the shell and ingest paths, which is exactly
+            # where a mis-cased or legacy code arrives from. Blank is allowed
+            # because it is the documented "default from the draw date" input;
+            # effective_reagent_generation resolves it to a real code.
+            # A row repeating itself is a cycle of length one: awaiting_repeat
+            # would see repeated_by non-empty and discharge the draw from the
+            # worklist using the draw itself as the resolution. The only
+            # repeat rule a single-row constraint can express, so it is the
+            # only one here; the cross-row rules live in _validate_repeats().
+            models.CheckConstraint(
+                name="cmvserology_repeat_is_not_itself",
+                condition=models.Q(repeats__isnull=True)
+                | ~models.Q(repeats=models.F("id")),
+            ),
+            models.CheckConstraint(
+                name="cmvserology_known_reagent_generation",
+                condition=models.Q(reagent_generation__in=sorted(VALID_GENERATIONS) + [""]),
+            ),
             *VerificationMixin.verification_constraints("cmvserology_verification"),
         ]
 
     @property
-    def is_positive(self):
-        if self.value is None:
+    def effective_reagent_generation(self):
+        """The generation this row is read against: the stored one, or the one
+        the draw date implies.
+
+        None only on an UNSAVED row that has no draw date yet - the admin add
+        form, where every field is still blank. save() fills the stored value, so
+        a persisted row always answers. Guarding here rather than letting
+        generation_for() compare None to a date, which crashed the visit change
+        page when the serology inline rendered an empty form.
+        """
+        if self.reagent_generation:
+            return self.reagent_generation
+        if self.drawn_date is None:
             return None
-        return self.value >= self.POSITIVE_THRESHOLD
+        return generation_for(self.drawn_date)
 
     @property
-    def igm_positive(self):
-        """IgM positivity at the SAME locked 2.0 AU/mL single cutoff. Derived,
-        never stored — no equivocal band, only True / False / None (not measured)."""
-        if self.igm_value is None:
+    def igg_interpretation(self):
+        """non_reactive / equivocal / reactive, read against THIS ROW's reagent
+        generation. None means not measured, not a fourth clinical answer."""
+        generation = self.effective_reagent_generation
+        if generation is None:
             return None
-        return self.igm_value >= self.POSITIVE_THRESHOLD
+        return interpret_igg(self.value, generation)
+
+    @property
+    def igm_interpretation(self):
+        generation = self.effective_reagent_generation
+        if generation is None:
+            return None
+        return interpret_igm(self.igm_value, generation)
+
+    @property
+    def is_equivocal(self):
+        """True when EITHER channel landed in the grayzone.
+
+        Either is enough. The PI's direction on an equivocal result is a repeat
+        draw, and that direction does not become weaker because the other channel
+        happened to read cleanly - the draw as a whole has an unresolved answer on
+        it. Under 1st-generation reagent this is always False by construction: that
+        band has a single cutoff with no grayzone (DEC-016), so pre-advisory rows
+        can never enter the worklist.
+        """
+        return EQUIVOCAL in (self.igg_interpretation, self.igm_interpretation)
+
+    @property
+    def awaiting_repeat(self):
+        """This draw is equivocal and nothing has been drawn to resolve it yet.
+
+        A draw leaves the worklist when some other row points back at it, which is
+        the only discharge: the equivocal reading itself is a frozen lab fact and
+        is never edited away. A repeat that is itself equivocal has nothing
+        pointing at IT, so it takes the earlier draw's place in the worklist rather
+        than closing the question out.
+        """
+        if self.recipient_visit_id is None:
+            return False  # donor draws are terminal, see the queryset docstring
+        if not self.is_equivocal:
+            return False
+        return not self.repeated_by.exists()
+
+    def save(self, *args, **kwargs):
+        """Fill the reagent generation from the draw date when it was left blank.
+
+        This model otherwise puts every rule in clean() plus a CheckConstraint,
+        and a save() override is a departure from that. It earns its place: it
+        SUPPLIES a value rather than rejecting one, which a CheckConstraint
+        cannot do, and it reaches the shell and ingest paths that never call
+        full_clean(). Explicitly-set values are never touched, so a late-entered
+        first-generation sample keeps the generation a human chose for it.
+
+        What it does NOT reach, because Django routes around it: `loaddata`
+        (DeserializedObject calls save_base(raw=True)), `bulk_create`, and
+        `queryset.update()`. A fixture restore therefore leaves the column blank
+        on every row. Nothing is misread when it does - `is_equivocal`, both
+        interpretations, both derived serostatuses and the export all read
+        `effective_reagent_generation`, which resolves a blank through the same
+        draw-date rule - but the stored column and the admin's generation filter
+        will show blank until 0020's backfill logic is re-run over the restored
+        rows. Ops consequence, recorded here so a blank column after a restore
+        reads as expected rather than as data loss.
+        """
+        if not self.reagent_generation and self.drawn_date:
+            self.reagent_generation = generation_for(self.drawn_date)
+        super().save(*args, **kwargs)
+
+    def _validate_repeats(self):
+        """A repeat pointer has to describe a pair a clinician would recognize.
+
+        These rules compare two rows, so none of them can be a CheckConstraint - a
+        constraint sees one row and cannot follow the FK. The self-reference rule
+        below is the one exception and IS enforced in the database; the rest live
+        here, which is the honest limit rather than a gap being papered over.
+        """
+        if self.repeats_id is None:
+            return
+        if self.pk is not None and self.repeats_id == self.pk:
+            raise ValidationError(
+                {"repeats": "A result cannot repeat itself."}
+            )
+        earlier = self.repeats
+        if self.recipient_visit_id is None:
+            raise ValidationError(
+                {"repeats": "Only a recipient draw can repeat an earlier draw. A "
+                            "donor holds at most one serology."}
+            )
+        if earlier.recipient_visit_id is None:
+            raise ValidationError(
+                {"repeats": "A donor draw cannot be repeated."}
+            )
+        mine = self.recipient_visit.recipient_id
+        theirs = earlier.recipient_visit.recipient_id
+        if mine != theirs:
+            raise ValidationError(
+                {"repeats": f"That draw belongs to {theirs}, not {mine}. A repeat "
+                            "draw is the same subject drawn again."}
+            )
+        if not earlier.is_equivocal:
+            raise ValidationError(
+                {"repeats": "That draw is not equivocal, so it was never awaiting a "
+                            "repeat. Only a grayzone result is repeated by direction."}
+            )
 
     def clean(self):
         super().clean()
@@ -678,6 +892,17 @@ class CMVSerology(ExactlyOneParentMixin, VerificationMixin):
             raise ValidationError("A reported IgM result must carry a value.")
         if self.igm_status == "missing" and self.igm_value is not None:
             raise ValidationError("A missing IgM observation must not carry a value.")
+        self._validate_repeats()
+        if self.reagent_generation and self.reagent_generation not in VALID_GENERATIONS:
+            raise ValidationError(
+                {
+                    "reagent_generation": (
+                        f"Unknown reagent generation {self.reagent_generation!r}. "
+                        f"Use one of: {', '.join(sorted(VALID_GENERATIONS))}, or leave "
+                        "blank to default from the draw date."
+                    )
+                }
+            )
 
 
 # Slice 14 — protocol-deviation kinds (a missed or late safety release). Two
